@@ -1,3 +1,9 @@
+//! Column-wise transformation routing.
+//!
+//! [`ColumnTransformer`] applies different preprocessing pipelines to
+//! different column subsets and combines the results into a single
+//! [`DataFrame`](polars::prelude::DataFrame).
+
 use crate::pipeline::DataFrameTransformer;
 use crate::traits::{Error, Fit, Result, Transform};
 use polars::prelude::*;
@@ -5,19 +11,43 @@ use std::collections::HashSet;
 
 /// How to handle columns not specified in any transformer.
 pub enum Remainder {
+    /// Drop unspecified columns from the output.
     Drop,
+    /// Pass unspecified columns through unchanged.
     Passthrough,
 }
 
-/// Applies different transformers to different subsets of columns.
+/// Apply different transformers to different subsets of columns.
 ///
-/// Corresponds to `sklearn.compose.ColumnTransformer`.
+/// Each transformer receives only its designated columns and produces
+/// transformed columns. The results are horizontally stacked.
+///
+/// # Example
+///
+/// ```rust
+/// use featrs::pipeline::ColumnTransformer;
+/// use featrs::pipeline::column_transformer::Remainder;
+/// use featrs::preprocessing::scaler::StandardScaler;
+///
+/// let ct = ColumnTransformer::new(
+///     vec![("scale".into(), Box::new(StandardScaler::new()), vec!["feat_a".into()])],
+///     Remainder::Passthrough,
+/// );
+/// ```
 pub struct ColumnTransformer {
     transformers: Vec<(String, Box<dyn DataFrameTransformer>, Vec<String>)>,
     remainder: Remainder,
 }
 
 impl ColumnTransformer {
+    /// Create a new `ColumnTransformer`.
+    ///
+    /// Each entry in `transformers` is `(name, transformer, columns)`:
+    /// - `name`: identifier for debugging
+    /// - `transformer`: any [`DataFrameTransformer`]
+    /// - `columns`: column names to apply the transformer to
+    ///
+    /// `remainder` controls how columns not listed in any transformer are handled.
     pub fn new(
         transformers: Vec<(String, Box<dyn DataFrameTransformer>, Vec<String>)>,
         remainder: Remainder,
@@ -131,7 +161,6 @@ mod tests {
 
         ct.fit(df.clone(), y).unwrap();
         let result = ct.transform(df).unwrap();
-        // Should have 3 columns: scaled 'a', passthrough 'b', 'c'
         assert_eq!(result.width(), 3);
     }
 }

@@ -1,3 +1,9 @@
+//! Polynomial feature generation.
+//!
+//! [`PolynomialFeatures`] generates all polynomial combinations of the
+//! input features up to a specified degree. Analogous to
+//! `sklearn.preprocessing.PolynomialFeatures`.
+
 use crate::traits::{Error, Fit, Result, Transform};
 use polars::prelude::*;
 
@@ -25,7 +31,23 @@ fn series_mul(a: &Series, b: &Series) -> Series {
 
 /// Generate polynomial and interaction features.
 ///
-/// Corresponds to `sklearn.preprocessing.PolynomialFeatures`.
+/// Creates new features that are polynomial combinations of the original
+/// features. For example, with `degree=2` and inputs `[a, b]`, the output
+/// includes `[a, b, a², a·b, b²]` plus an optional bias term.
+///
+/// # Example
+///
+/// ```rust
+/// use featrs::preprocessing::polynomial_features::PolynomialFeatures;
+/// use featrs::traits::{Fit, Transform};
+///
+/// let mut pf = PolynomialFeatures::new(2)
+///     .include_bias(true)
+///     .interaction_only(false);
+/// # let df = polars::prelude::DataFrame::new(0usize, vec![]).unwrap();
+/// // pf.fit(df.clone(), target)?;
+/// // let result = pf.transform(df)?;
+/// ```
 pub struct PolynomialFeatures {
     fitted: bool,
     degree: usize,
@@ -35,6 +57,11 @@ pub struct PolynomialFeatures {
 }
 
 impl PolynomialFeatures {
+    /// Create a new `PolynomialFeatures` with the given maximum degree.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `degree` is `0`.
     pub fn new(degree: usize) -> Self {
         assert!(degree >= 1, "degree must be >= 1");
         Self {
@@ -46,11 +73,14 @@ impl PolynomialFeatures {
         }
     }
 
+    /// Whether to include only interaction features (`a·b`, `a·b·c`, ...)
+    /// and exclude pure powers (`a²`, `a³`, ...). Default: `false`.
     pub fn interaction_only(mut self, value: bool) -> Self {
         self.interaction_only = value;
         self
     }
 
+    /// Whether to include a bias column (all ones). Default: `true`.
     pub fn include_bias(mut self, value: bool) -> Self {
         self.include_bias = value;
         self
@@ -73,6 +103,11 @@ impl PolynomialFeatures {
             .collect()
     }
 
+    /// Generate all exponent vectors for polynomial features.
+    ///
+    /// Each vector has length `n_features`, and the sum of its elements
+    /// is between `1` and `degree`. When `interaction_only` is `true`,
+    /// each exponent is `0` or `1`.
     fn generate_powers(
         n_features: usize,
         degree: usize,
@@ -81,8 +116,6 @@ impl PolynomialFeatures {
         let mut result = Vec::new();
 
         if interaction_only {
-            // Each exponent is 0 or 1, sum in 2..=degree
-            // Use bit mask enumeration (2^n possibilities)
             let max_mask = 1usize << n_features;
             for mask in 0..max_mask {
                 let sum_bits = mask.count_ones() as usize;
@@ -96,10 +129,8 @@ impl PolynomialFeatures {
                     result.push(powers);
                 }
             }
-            // Sort by total degree
             result.sort_by_key(|p| p.iter().sum::<usize>());
         } else {
-            // Recursive generation of exponent vectors with sum in 1..=degree
             fn recurse(
                 result: &mut Vec<Vec<usize>>,
                 current: &mut Vec<usize>,
@@ -127,7 +158,6 @@ impl PolynomialFeatures {
             let mut current = Vec::with_capacity(n_features);
             recurse(&mut result, &mut current, 0, degree, n_features, degree);
 
-            // Sort by total degree then lexicographically
             result.sort_by_key(|p| (p.iter().sum::<usize>(), p.clone()));
         }
 
@@ -170,17 +200,14 @@ impl Transform<DataFrame> for PolynomialFeatures {
         let mut columns: Vec<Column> = Vec::new();
         let n_rows = x.height();
 
-        // Add bias term (column of ones)
         if self.include_bias {
             let bias = Column::from(Series::new("bias".into(), vec![1.0f64; n_rows]));
             columns.push(bias);
         }
 
-        // Generate each polynomial feature
         for power in &powers {
             let mut col_name = String::new();
             let mut has_terms = false;
-
             let mut series_vec: Option<Series> = None;
 
             for (j, &p) in power.iter().enumerate() {
@@ -192,20 +219,20 @@ impl Transform<DataFrame> for PolynomialFeatures {
                 let orig_series = x.column(name).unwrap().as_materialized_series().clone();
 
                 if !has_terms {
-                    if p > 1 {
-                        series_vec = Some(series_pow(&orig_series, p));
+                    series_vec = if p > 1 {
+                        Some(series_pow(&orig_series, p))
                     } else {
-                        series_vec = Some(orig_series);
-                    }
+                        Some(orig_series)
+                    };
                     col_name = name.clone();
                     has_terms = true;
                 } else {
-                    if p > 1 {
-                        let powered = series_pow(&orig_series, p);
-                        series_vec = Some(series_mul(&series_vec.unwrap(), &powered));
+                    let powered = if p > 1 {
+                        series_pow(&orig_series, p)
                     } else {
-                        series_vec = Some(series_mul(&series_vec.unwrap(), &orig_series));
-                    }
+                        orig_series
+                    };
+                    series_vec = Some(series_mul(&series_vec.unwrap(), &powered));
                     col_name.push('_');
                     col_name.push_str(name);
                 }
@@ -248,12 +275,9 @@ mod tests {
     #[test]
     fn test_generate_powers_degree2_2features() {
         let powers = PolynomialFeatures::generate_powers(2, 2, false);
-        // All degree 1 and 2 combinations: [0,1], [1,0], [0,2], [1,1], [2,0]
         assert_eq!(powers.len(), 5);
-        // First two should have sum 1
         assert_eq!(powers[0].iter().sum::<usize>(), 1);
         assert_eq!(powers[1].iter().sum::<usize>(), 1);
-        // Next three should have sum 2
         assert_eq!(powers[2].iter().sum::<usize>(), 2);
         assert_eq!(powers[3].iter().sum::<usize>(), 2);
         assert_eq!(powers[4].iter().sum::<usize>(), 2);
@@ -268,7 +292,6 @@ mod tests {
         pf.fit(df.clone(), y).unwrap();
         let result = pf.transform(df).unwrap();
 
-        // bias + a + b + a^2 + a*b + b^2 = 6 columns
         assert_eq!(result.width(), 6);
         assert_eq!(result.height(), 3);
     }
@@ -282,7 +305,6 @@ mod tests {
         pf.fit(df.clone(), y).unwrap();
         let result = pf.transform(df).unwrap();
 
-        // a + b + a^2 + a*b + b^2 = 5 columns (no bias)
         assert_eq!(result.width(), 5);
     }
 
@@ -297,7 +319,6 @@ mod tests {
         pf.fit(df.clone(), y).unwrap();
         let result = pf.transform(df).unwrap();
 
-        // a*b = 1 column (interaction only)
         assert_eq!(result.width(), 1);
     }
 }
