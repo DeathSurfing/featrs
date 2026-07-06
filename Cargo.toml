@@ -2,6 +2,7 @@
 name = "featrs"
 version = "0.2.0"
 edition = "2024"
+rust-version = "1.91"
 description = "Feature engineering library for Rust, inspired by scikit-learn"
 authors = ["Aditya Vikram Mahendru"]
 license = "MIT"

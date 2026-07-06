@@ -1,0 +1,10 @@
+# Clippy configuration for featrs.
+# See: https://rust-lang.github.io/rust-clippy/stable/index.html
+
+# Minimum Supported Rust Version — keeps MSRV-aware lints (e.g. `clippy::manual_*`)
+# accurate against the declared `rust-version` in Cargo.toml.
+msrv = "1.91"
+
+# Flag functions whose cognitive complexity exceeds this threshold.
+# Transformers should stay readable; raise if a legitimate algorithm needs more.
+cognitive-complexity-threshold = 30

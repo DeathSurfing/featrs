@@ -26,6 +26,8 @@ pub struct Difference {
 }
 
 impl Difference {
+    /// Create a new differencer for `columns` over `period` lag.
+    /// If `pct_change` is `true`, compute percentage change instead of absolute difference.
     pub fn new(columns: &[&str], period: i64, pct_change: bool) -> Self {
         Self {
             fitted: false,

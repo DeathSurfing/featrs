@@ -29,6 +29,8 @@ pub struct CyclicalEncoder {
 }
 
 impl CyclicalEncoder {
+    /// Create an encoder that maps each column to `(sin, cos)` using a single
+    /// shared integer period (e.g. `24` for hours, `12` for months).
     pub fn new(columns: &[&str], period: usize) -> Self {
         let period_f = period as f64;
         Self {
@@ -37,6 +39,8 @@ impl CyclicalEncoder {
         }
     }
 
+    /// Create an encoder where each column gets its own integer period, given as
+    /// `(column_name, period)` pairs.
     pub fn with_periods(columns: &[(&str, usize)]) -> Self {
         Self {
             fitted: false,
