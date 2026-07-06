@@ -1,0 +1,22 @@
+[package]
+name = "featrs"
+version = "0.1.0"
+edition = "2024"
+description = "Feature engineering library for Rust, inspired by scikit-learn"
+authors = ["Aditya Vikram Mahendru"]
+license = "MIT"
+repository = "https://github.com/anomalyco/featrs"
+documentation = "https://docs.rs/featrs"
+keywords = ["feature-engineering", "machine-learning", "preprocessing", "scikit-learn"]
+categories = ["science", "data-structures"]
+
+[dependencies]
+polars = "0.54"
+thiserror = "2"
+
+[dev-dependencies]
+approx = "0.5"
+
+[lib]
+name = "featrs"
+path = "src/lib.rs"
