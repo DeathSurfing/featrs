@@ -113,3 +113,21 @@ jobs:
 
       - name: Audit
         run: cargo audit
+
+  publish-dry-run:
+    name: Publish (dry-run)
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust (stable)
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: stable-publish
+
+      - name: cargo publish --dry-run
+        run: cargo publish --dry-run --allow-dirty
