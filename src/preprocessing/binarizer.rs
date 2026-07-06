@@ -49,7 +49,11 @@ impl Fit<DataFrame, DataFrame> for Binarizer {
 
     fn fit(&mut self, x: DataFrame, _y: DataFrame) -> Result<()> {
         if x.width() == 0 {
-            return Err(Error::InvalidInput("empty DataFrame".into()));
+            return Err(Error::InvalidInput(
+                "Binarizer.fit received a DataFrame with 0 columns. \
+                 Provide at least one column."
+                    .into(),
+            ));
         }
         self.fitted = true;
         Ok(())
@@ -61,7 +65,11 @@ impl Transform<DataFrame> for Binarizer {
 
     fn transform(&self, x: DataFrame) -> Result<DataFrame> {
         if !self.fitted {
-            return Err(Error::NotFitted("Binarizer".into()));
+            return Err(Error::NotFitted(
+                "Binarizer has not been fitted. \
+                 Call .fit(dataframe, target) before .transform()."
+                    .into(),
+            ));
         }
 
         let col_names: Vec<String> = x

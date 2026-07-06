@@ -47,10 +47,14 @@ impl Default for FClassif {
 
 impl ScoreFunction for FClassif {
     fn score(&self, x: &DataFrame, y: &Column) -> Result<Vec<(String, f64)>> {
-        let y_ca = y
-            .as_materialized_series()
-            .f64()
-            .map_err(|_| Error::InvalidInput("target must be f64".into()))?;
+        let y_ca = y.as_materialized_series().f64().map_err(|_| {
+            Error::InvalidInput(format!(
+                "FClassif: target column '{}' has dtype {}; expected Float64. \
+                     The target must be numeric (0, 1, 2, ...) for ANOVA F-test.",
+                y.name(),
+                y.dtype()
+            ))
+        })?;
         let y_vals: Vec<f64> = y_ca.iter().flatten().collect();
         let n = y_vals.len() as f64;
         let y_mean = y_vals.iter().sum::<f64>() / n;
@@ -58,6 +62,22 @@ impl ScoreFunction for FClassif {
         let mut classes: Vec<f64> = y_ca.iter().flatten().collect();
         classes.sort_by(|a, b| a.partial_cmp(b).unwrap());
         classes.dedup();
+
+        if classes.len() < 2 {
+            return Err(Error::InvalidInput(format!(
+                "FClassif: target has only {} unique class(es); need at least 2 \
+                 to compute ANOVA F-statistic.",
+                classes.len()
+            )));
+        }
+
+        if n != x.height() as f64 {
+            return Err(Error::InvalidInput(format!(
+                "FClassif: feature rows ({}) and target rows ({}) don't match.",
+                x.height(),
+                n
+            )));
+        }
 
         let mut scores = Vec::new();
 
@@ -155,13 +175,28 @@ impl Fit<DataFrame, DataFrame> for SelectKBest {
     type Output = ();
 
     fn fit(&mut self, x: DataFrame, y: DataFrame) -> Result<()> {
-        if y.width() != 1 {
+        if x.width() == 0 {
             return Err(Error::InvalidInput(
-                "target must be a single-column DataFrame".into(),
+                "SelectKBest.fit received a DataFrame with 0 columns.".into(),
             ));
+        }
+        if y.width() != 1 {
+            return Err(Error::InvalidInput(format!(
+                "SelectKBest.fit: target must have exactly 1 column but got {} columns. \
+                 Select a single target column.",
+                y.width()
+            )));
         }
         let y_col = &y.columns()[0];
         let mut scores = self.score_fn.score(&x, y_col)?;
+
+        if scores.is_empty() {
+            return Err(Error::InvalidInput(
+                "SelectKBest: no f64 columns found to score. \
+                 SelectKBest operates on Float64 columns only."
+                    .into(),
+            ));
+        }
 
         scores.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap());
 
@@ -180,9 +215,21 @@ impl Transform<DataFrame> for SelectKBest {
 
     fn transform(&self, x: DataFrame) -> Result<DataFrame> {
         if !self.fitted {
-            return Err(Error::NotFitted("SelectKBest".into()));
+            return Err(Error::NotFitted(
+                "SelectKBest has not been fitted. \
+                 Call .fit(dataframe, target) before .transform()."
+                    .into(),
+            ));
         }
         let cols = self.selected_columns.as_ref().unwrap();
+        if cols.is_empty() {
+            // Should not happen if fit succeeded, but handle gracefully
+            return Err(Error::Computation(
+                "SelectKBest: no columns were selected. \
+                 This may mean the scoring function returned no valid scores."
+                    .into(),
+            ));
+        }
         let refs: Vec<&str> = cols.iter().map(|s| s.as_str()).collect();
         x.select(refs)
             .map_err(|e| Error::Computation(e.to_string()))

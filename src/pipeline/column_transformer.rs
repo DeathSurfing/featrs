@@ -73,12 +73,33 @@ impl Fit<DataFrame, DataFrame> for ColumnTransformer {
     type Output = ();
 
     fn fit(&mut self, x: DataFrame, _y: DataFrame) -> Result<()> {
-        for (_, transformer, columns) in &mut self.transformers {
-            let subset = x
-                .select(columns)
-                .map_err(|e| Error::InvalidInput(format!("column selection failed: {}", e)))?;
+        if x.width() == 0 {
+            return Err(Error::InvalidInput(
+                "ColumnTransformer.fit received a DataFrame with 0 columns.".into(),
+            ));
+        }
+        for (t_name, transformer, columns) in &mut self.transformers {
+            let col_names = columns.clone();
+            let subset = x.select(&col_names).map_err(|e| {
+                Error::InvalidInput(format!(
+                    "ColumnTransformer: transformer '{}' requested columns {:?} \
+                     but one or more don't exist in the input. Available columns: {:?}. {}",
+                    t_name,
+                    col_names,
+                    x.get_column_names()
+                        .iter()
+                        .map(|s| s.as_str())
+                        .collect::<Vec<_>>(),
+                    e
+                ))
+            })?;
             let y_dummy = subset.clone();
-            transformer.fit(subset, y_dummy)?;
+            transformer.fit(subset, y_dummy).map_err(|e| {
+                Error::Computation(format!(
+                    "ColumnTransformer: transformer '{}' failed during fit: {}",
+                    t_name, e
+                ))
+            })?;
         }
         Ok(())
     }
@@ -90,12 +111,26 @@ impl Transform<DataFrame> for ColumnTransformer {
     fn transform(&self, x: DataFrame) -> Result<DataFrame> {
         let mut parts: Vec<DataFrame> = Vec::new();
 
-        for (_, transformer, columns) in &self.transformers {
-            let subset = x
-                .clone()
-                .select(columns)
-                .map_err(|e| Error::InvalidInput(format!("column selection failed: {}", e)))?;
-            let transformed = transformer.transform(subset)?;
+        for (t_name, transformer, columns) in &self.transformers {
+            let subset = x.clone().select(columns).map_err(|e| {
+                Error::InvalidInput(format!(
+                    "ColumnTransformer: transformer '{}' requested columns {:?} \
+                     but one or more don't exist in the input. Available columns: {:?}. {}",
+                    t_name,
+                    columns,
+                    x.get_column_names()
+                        .iter()
+                        .map(|s| s.as_str())
+                        .collect::<Vec<_>>(),
+                    e
+                ))
+            })?;
+            let transformed = transformer.transform(subset).map_err(|e| {
+                Error::Computation(format!(
+                    "ColumnTransformer: transformer '{}' failed during transform: {}",
+                    t_name, e
+                ))
+            })?;
             parts.push(transformed);
         }
 
@@ -109,8 +144,12 @@ impl Transform<DataFrame> for ColumnTransformer {
                     .map(|s| s.as_str())
                     .collect();
                 if !remaining_cols.is_empty() {
+                    let rem = remaining_cols.clone();
                     let remaining = x.select(remaining_cols).map_err(|e| {
-                        Error::InvalidInput(format!("remainder selection failed: {}", e))
+                        Error::InvalidInput(format!(
+                            "ColumnTransformer: failed to select remainder columns {:?}: {}",
+                            rem, e
+                        ))
                     })?;
                     parts.push(remaining);
                 }
@@ -120,16 +159,22 @@ impl Transform<DataFrame> for ColumnTransformer {
 
         if parts.is_empty() {
             return Err(Error::InvalidInput(
-                "ColumnTransformer produced no output columns".into(),
+                "ColumnTransformer produced no output columns. \
+                 Check that at least one transformer has matching input columns \
+                 or use Remainder::Passthrough to keep unspecified columns."
+                    .into(),
             ));
         }
 
         let mut result = parts.remove(0);
         for other in &parts {
             let cols = other.columns().to_vec();
-            result = result
-                .hstack(&cols)
-                .map_err(|e| Error::Computation(format!("failed to concatenate columns: {}", e)))?;
+            result = result.hstack(&cols).map_err(|e| {
+                Error::Computation(format!(
+                    "ColumnTransformer: failed to stack transformed columns: {}",
+                    e
+                ))
+            })?;
         }
 
         Ok(result)

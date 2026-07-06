@@ -49,7 +49,18 @@ impl Fit<DataFrame, DataFrame> for VarianceThreshold {
 
     fn fit(&mut self, x: DataFrame, _y: DataFrame) -> Result<()> {
         if x.width() == 0 {
-            return Err(Error::InvalidInput("data has no columns".into()));
+            return Err(Error::InvalidInput(
+                "VarianceThreshold.fit received a DataFrame with 0 columns. \
+                 Provide at least one column."
+                    .into(),
+            ));
+        }
+        if x.height() == 0 {
+            return Err(Error::InvalidInput(
+                "VarianceThreshold.fit received a DataFrame with 0 rows. \
+                 Provide at least one row."
+                    .into(),
+            ));
         }
 
         let mut selected = Vec::new();
@@ -70,9 +81,13 @@ impl Fit<DataFrame, DataFrame> for VarianceThreshold {
         }
 
         if selected.is_empty() {
-            return Err(Error::InvalidInput(
-                "no features meet the variance threshold".into(),
-            ));
+            return Err(Error::InvalidInput(format!(
+                "VarianceThreshold: no features meet the variance threshold ({}) \
+                 out of {} f64 columns. Try lowering the threshold or checking \
+                 that your data has variance.",
+                self.threshold,
+                x.get_column_names().len()
+            )));
         }
 
         self.selected_columns = Some(selected);
@@ -86,7 +101,11 @@ impl Transform<DataFrame> for VarianceThreshold {
 
     fn transform(&self, x: DataFrame) -> Result<DataFrame> {
         if !self.fitted {
-            return Err(Error::NotFitted("VarianceThreshold".into()));
+            return Err(Error::NotFitted(
+                "VarianceThreshold has not been fitted. \
+                 Call .fit(dataframe, target) before .transform()."
+                    .into(),
+            ));
         }
         let cols = self.selected_columns.as_ref().unwrap();
         let refs: Vec<&str> = cols.iter().map(|s| s.as_str()).collect();

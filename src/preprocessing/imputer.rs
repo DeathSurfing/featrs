@@ -77,6 +77,13 @@ impl Fit<DataFrame, DataFrame> for SimpleImputer {
     type Output = ();
 
     fn fit(&mut self, x: DataFrame, _y: DataFrame) -> Result<()> {
+        if x.height() == 0 {
+            return Err(Error::InvalidInput(
+                "SimpleImputer.fit received a DataFrame with 0 rows. \
+                 Provide data with at least 1 row."
+                    .into(),
+            ));
+        }
         let mut fill_values = HashMap::new();
 
         for col in x.columns() {
@@ -96,7 +103,9 @@ impl Fit<DataFrame, DataFrame> for SimpleImputer {
                 Strategy::Mean => {
                     if all_vals.is_empty() {
                         return Err(Error::Computation(format!(
-                            "column '{}' has no non-null values",
+                            "SimpleImputer(Mean): column '{}' has no non-null values. \
+                             Cannot compute the mean of an all-null column. \
+                             Use Strategy::Constant instead.",
                             name
                         )));
                     }
@@ -107,7 +116,9 @@ impl Fit<DataFrame, DataFrame> for SimpleImputer {
                     sorted.sort_by(|a, b| a.partial_cmp(b).unwrap());
                     if sorted.is_empty() {
                         return Err(Error::Computation(format!(
-                            "column '{}' has no non-null values",
+                            "SimpleImputer(Median): column '{}' has no non-null values. \
+                             Cannot compute the median of an all-null column. \
+                             Use Strategy::Constant instead.",
                             name
                         )));
                     }
@@ -121,7 +132,9 @@ impl Fit<DataFrame, DataFrame> for SimpleImputer {
                 Strategy::MostFrequent => {
                     if all_vals.is_empty() {
                         return Err(Error::Computation(format!(
-                            "column '{}' has no non-null values",
+                            "SimpleImputer(MostFrequent): column '{}' has no non-null values. \
+                             Cannot compute the mode of an all-null column. \
+                             Use Strategy::Constant instead.",
                             name
                         )));
                     }
@@ -149,14 +162,33 @@ impl Transform<DataFrame> for SimpleImputer {
 
     fn transform(&self, x: DataFrame) -> Result<DataFrame> {
         if !self.fitted {
-            return Err(Error::NotFitted("SimpleImputer".into()));
+            return Err(Error::NotFitted(
+                "SimpleImputer has not been fitted. \
+                 Call .fit(dataframe, target) before .transform()."
+                    .into(),
+            ));
         }
         let fill_values = self.fill_values.as_ref().unwrap();
         let mut out = x.clone();
 
         for (name, fill) in fill_values {
-            let s = out.column(name.as_str()).unwrap();
-            let ca = s.f64().unwrap();
+            let s = out.column(name.as_str()).map_err(|e| {
+                Error::InvalidInput(format!(
+                    "SimpleImputer.transform: column '{}' not found. \
+                     The imputer was fitted on columns: {:?}. {}",
+                    name,
+                    fill_values.keys().collect::<Vec<_>>(),
+                    e
+                ))
+            })?;
+            let ca = s.f64().map_err(|e| {
+                Error::InvalidInput(format!(
+                    "SimpleImputer.transform: column '{}' has dtype {}; expected Float64. {}",
+                    name,
+                    s.dtype(),
+                    e
+                ))
+            })?;
             let filled: ChunkedArray<Float64Type> =
                 ca.iter().map(|opt| opt.or(Some(*fill))).collect();
             out.replace(name.as_str(), filled.into_series().into())

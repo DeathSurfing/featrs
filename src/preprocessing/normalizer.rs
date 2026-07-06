@@ -83,13 +83,19 @@ impl Fit<DataFrame, DataFrame> for Normalizer {
 
     fn fit(&mut self, x: DataFrame, _y: DataFrame) -> Result<()> {
         if x.width() == 0 {
-            return Err(Error::InvalidInput("empty DataFrame".into()));
+            return Err(Error::InvalidInput(
+                "Normalizer.fit received a DataFrame with 0 columns. \
+                 Provide at least one column."
+                    .into(),
+            ));
         }
         for col in x.columns() {
             if col.dtype() != &DataType::Float64 {
                 return Err(Error::InvalidInput(format!(
-                    "column '{}' is not f64",
-                    col.name()
+                    "Normalizer.fit: column '{}' has dtype {}; expected Float64. \
+                     Normalizer operates on f64 columns only.",
+                    col.name(),
+                    col.dtype()
                 )));
             }
         }
@@ -103,7 +109,11 @@ impl Transform<DataFrame> for Normalizer {
 
     fn transform(&self, x: DataFrame) -> Result<DataFrame> {
         if !self.fitted {
-            return Err(Error::NotFitted("Normalizer".into()));
+            return Err(Error::NotFitted(
+                "Normalizer has not been fitted. \
+                 Call .fit(dataframe, target) before .transform()."
+                    .into(),
+            ));
         }
 
         let n_cols = x.width();

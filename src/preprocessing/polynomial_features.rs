@@ -63,7 +63,10 @@ impl PolynomialFeatures {
     ///
     /// Panics if `degree` is `0`.
     pub fn new(degree: usize) -> Self {
-        assert!(degree >= 1, "degree must be >= 1");
+        assert!(
+            degree >= 1,
+            "PolynomialFeatures::new: degree must be >= 1, got {degree}"
+        );
         Self {
             fitted: false,
             degree,
@@ -103,11 +106,6 @@ impl PolynomialFeatures {
             .collect()
     }
 
-    /// Generate all exponent vectors for polynomial features.
-    ///
-    /// Each vector has length `n_features`, and the sum of its elements
-    /// is between `1` and `degree`. When `interaction_only` is `true`,
-    /// each exponent is `0` or `1`.
     fn generate_powers(
         n_features: usize,
         degree: usize,
@@ -175,11 +173,23 @@ impl Fit<DataFrame, DataFrame> for PolynomialFeatures {
     type Output = ();
 
     fn fit(&mut self, x: DataFrame, _y: DataFrame) -> Result<()> {
+        if x.height() == 0 || x.width() == 0 {
+            return Err(Error::InvalidInput(
+                "PolynomialFeatures.fit received an empty DataFrame (0 rows or 0 columns).".into(),
+            ));
+        }
         let col_names = self.numeric_f64_column_names(&x);
         if col_names.is_empty() {
-            return Err(Error::InvalidInput(
-                "no f64 columns found for PolynomialFeatures".into(),
-            ));
+            let all_types: Vec<String> = x
+                .get_column_names()
+                .iter()
+                .filter_map(|n| x.column(n).ok().map(|c| format!("'{}' ({})", n, c.dtype())))
+                .collect();
+            return Err(Error::InvalidInput(format!(
+                "PolynomialFeatures.fit: no Float64 columns found. \
+                 Available columns: [{}]. PolynomialFeatures operates on f64 columns.",
+                all_types.join(", ")
+            )));
         }
         self.input_columns = Some(col_names);
         self.fitted = true;
@@ -192,7 +202,11 @@ impl Transform<DataFrame> for PolynomialFeatures {
 
     fn transform(&self, x: DataFrame) -> Result<DataFrame> {
         if !self.fitted {
-            return Err(Error::NotFitted("PolynomialFeatures".into()));
+            return Err(Error::NotFitted(
+                "PolynomialFeatures has not been fitted. \
+                 Call .fit(dataframe, target) before .transform()."
+                    .into(),
+            ));
         }
         let input_columns = self.input_columns.as_ref().unwrap();
         let powers = Self::generate_powers(input_columns.len(), self.degree, self.interaction_only);
@@ -216,7 +230,17 @@ impl Transform<DataFrame> for PolynomialFeatures {
                 }
 
                 let name = &input_columns[j];
-                let orig_series = x.column(name).unwrap().as_materialized_series().clone();
+                let orig_series = x
+                    .column(name)
+                    .map_err(|e| {
+                        Error::InvalidInput(format!(
+                            "PolynomialFeatures.transform: column '{}' not found. \
+                             The transformer was fitted on columns: {:?}. {}",
+                            name, input_columns, e
+                        ))
+                    })?
+                    .as_materialized_series()
+                    .clone();
 
                 if !has_terms {
                     series_vec = if p > 1 {
@@ -253,7 +277,9 @@ impl Transform<DataFrame> for PolynomialFeatures {
 
         if columns.is_empty() {
             return Err(Error::Computation(
-                "no polynomial features generated".into(),
+                "PolynomialFeatures: no features were generated. \
+                 Ensure degree >= 1 and the input has at least one f64 column."
+                    .into(),
             ));
         }
 

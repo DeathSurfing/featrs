@@ -91,41 +91,63 @@ impl Fit<DataFrame, DataFrame> for StandardScaler {
     type Output = ();
 
     fn fit(&mut self, x: DataFrame, _y: DataFrame) -> Result<()> {
-        if x.height() == 0 || x.width() == 0 {
-            return Err(Error::InvalidInput("data cannot be empty".into()));
+        let n_cols = x.width();
+        if x.height() == 0 || n_cols == 0 {
+            return Err(Error::InvalidInput(
+                "StandardScaler.fit received an empty DataFrame (0 rows or 0 columns). \
+                 Provide data with at least 1 row and 1 column."
+                    .into(),
+            ));
         }
 
         let col_names = numeric_f64_columns(&x);
         if col_names.is_empty() {
-            return Err(Error::InvalidInput(
-                "no f64 columns found in DataFrame".into(),
-            ));
+            let all_types: Vec<String> = x
+                .get_column_names()
+                .iter()
+                .filter_map(|n| x.column(n).ok().map(|c| format!("'{}' ({})", n, c.dtype())))
+                .collect();
+            return Err(Error::InvalidInput(format!(
+                "StandardScaler: no Float64 columns found. \
+                 This transformer only operates on f64 columns. \
+                 Available columns: [{}]. \
+                 Try casting non-f64 columns before scaling.",
+                all_types.join(", ")
+            )));
         }
 
         let mut params = Vec::with_capacity(col_names.len());
 
         for name in &col_names {
-            let s = x
-                .column(name.as_str())
-                .map_err(|e| Error::InvalidInput(format!("column '{}' not found: {}", name, e)))?;
+            let s = x.column(name.as_str()).map_err(|e| {
+                Error::InvalidInput(format!(
+                    "StandardScaler: column '{}' expected but not found. {}",
+                    name, e
+                ))
+            })?;
 
-            let ca = s
-                .f64()
-                .map_err(|e| Error::Computation(format!("column '{}' is not f64: {}", name, e)))?;
+            let _ca = s.f64().map_err(|e| {
+                Error::InvalidInput(format!(
+                    "StandardScaler: column '{}' has dtype {}; expected Float64. {}",
+                    name,
+                    s.dtype(),
+                    e
+                ))
+            })?;
 
             let col_mean = if self.with_mean {
-                ca.mean().unwrap_or(0.0)
+                _ca.mean().unwrap_or(0.0)
             } else {
                 0.0
             };
 
             let col_std = if self.with_std {
-                let var = ca
+                let var = _ca
                     .iter()
                     .flatten()
                     .map(|v| (v - col_mean).powi(2))
                     .sum::<f64>()
-                    / ca.len() as f64;
+                    / _ca.len() as f64;
                 var.sqrt()
             } else {
                 1.0
@@ -133,7 +155,8 @@ impl Fit<DataFrame, DataFrame> for StandardScaler {
 
             if col_std < f64::EPSILON {
                 return Err(Error::Computation(format!(
-                    "column '{}' has zero variance",
+                    "StandardScaler: column '{}' has zero variance. \
+                     Try removing it with VarianceThreshold or setting with_std(false).",
                     name
                 )));
             }
@@ -157,7 +180,11 @@ impl Transform<DataFrame> for StandardScaler {
 
     fn transform(&self, x: DataFrame) -> Result<Self::Output> {
         if !self.fitted {
-            return Err(Error::NotFitted("StandardScaler".into()));
+            return Err(Error::NotFitted(
+                "StandardScaler has not been fitted. \
+                 Call .fit(dataframe, target) before .transform()."
+                    .into(),
+            ));
         }
 
         let params = self.params.as_ref().unwrap();
@@ -165,11 +192,22 @@ impl Transform<DataFrame> for StandardScaler {
 
         for p in params {
             let s = out.column(&p.name).map_err(|e| {
-                Error::InvalidInput(format!("column '{}' not found: {}", p.name, e))
+                Error::InvalidInput(format!(
+                    "StandardScaler.transform: column '{}' not found in input. \
+                     The scaler was fitted on columns {:?}. {}",
+                    p.name,
+                    params.iter().map(|p| &p.name).collect::<Vec<_>>(),
+                    e
+                ))
             })?;
 
             let ca = s.f64().map_err(|e| {
-                Error::Computation(format!("column '{}' is not f64: {}", p.name, e))
+                Error::InvalidInput(format!(
+                    "StandardScaler.transform: column '{}' has dtype {}; expected Float64. {}",
+                    p.name,
+                    s.dtype(),
+                    e
+                ))
             })?;
 
             let scaled: ChunkedArray<Float64Type> = ca
@@ -241,7 +279,26 @@ impl Fit<DataFrame, DataFrame> for MinMaxScaler {
     type Output = ();
 
     fn fit(&mut self, x: DataFrame, _y: DataFrame) -> Result<()> {
+        if x.height() == 0 || x.width() == 0 {
+            return Err(Error::InvalidInput(
+                "MinMaxScaler.fit received an empty DataFrame (0 rows or 0 columns). \
+                 Provide data with at least 1 row and 1 column."
+                    .into(),
+            ));
+        }
         let col_names = numeric_f64_columns(&x);
+        if col_names.is_empty() {
+            let all_types: Vec<String> = x
+                .get_column_names()
+                .iter()
+                .filter_map(|n| x.column(n).ok().map(|c| format!("'{}' ({})", n, c.dtype())))
+                .collect();
+            return Err(Error::InvalidInput(format!(
+                "MinMaxScaler: no Float64 columns found. \
+                 Available columns: [{}]. Cast non-f64 columns first.",
+                all_types.join(", ")
+            )));
+        }
         let r_min = self.feature_range.0;
         let r_max = self.feature_range.1;
         let mut params = Vec::new();
@@ -255,8 +312,10 @@ impl Fit<DataFrame, DataFrame> for MinMaxScaler {
 
             if (col_max - col_min).abs() < f64::EPSILON {
                 return Err(Error::Computation(format!(
-                    "column '{}' has constant values",
-                    name
+                    "MinMaxScaler: column '{}' is constant (all values = {}). \
+                     Cannot scale a constant column. Remove it or use StandardScaler \
+                     with with_std(false).",
+                    name, col_min
                 )));
             }
 
@@ -279,7 +338,11 @@ impl Transform<DataFrame> for MinMaxScaler {
 
     fn transform(&self, x: DataFrame) -> Result<DataFrame> {
         if !self.fitted {
-            return Err(Error::NotFitted("MinMaxScaler".into()));
+            return Err(Error::NotFitted(
+                "MinMaxScaler has not been fitted. \
+                 Call .fit(dataframe, target) before .transform()."
+                    .into(),
+            ));
         }
         let r_min = self.feature_range.0;
         let mut out = x.clone();
@@ -377,7 +440,26 @@ impl Fit<DataFrame, DataFrame> for RobustScaler {
     type Output = ();
 
     fn fit(&mut self, x: DataFrame, _y: DataFrame) -> Result<()> {
+        if x.height() == 0 || x.width() == 0 {
+            return Err(Error::InvalidInput(
+                "RobustScaler.fit received an empty DataFrame (0 rows or 0 columns). \
+                 Provide data with at least 1 row and 1 column."
+                    .into(),
+            ));
+        }
         let col_names = numeric_f64_columns(&x);
+        if col_names.is_empty() {
+            let all_types: Vec<String> = x
+                .get_column_names()
+                .iter()
+                .filter_map(|n| x.column(n).ok().map(|c| format!("'{}' ({})", n, c.dtype())))
+                .collect();
+            return Err(Error::InvalidInput(format!(
+                "RobustScaler: no Float64 columns found. \
+                 Available columns: [{}]. Cast non-f64 columns first.",
+                all_types.join(", ")
+            )));
+        }
         let mut params = Vec::new();
 
         for name in &col_names {
@@ -393,8 +475,9 @@ impl Fit<DataFrame, DataFrame> for RobustScaler {
 
             if iqr < f64::EPSILON {
                 return Err(Error::Computation(format!(
-                    "column '{}' has zero IQR",
-                    name
+                    "RobustScaler: column '{}' has zero IQR (Q1=Q3={}). \
+                     All values are the same. Remove the column or use a different scaler.",
+                    name, median
                 )));
             }
 
@@ -416,7 +499,11 @@ impl Transform<DataFrame> for RobustScaler {
 
     fn transform(&self, x: DataFrame) -> Result<DataFrame> {
         if !self.fitted {
-            return Err(Error::NotFitted("RobustScaler".into()));
+            return Err(Error::NotFitted(
+                "RobustScaler has not been fitted. \
+                 Call .fit(dataframe, target) before .transform()."
+                    .into(),
+            ));
         }
         let mut out = x.clone();
 

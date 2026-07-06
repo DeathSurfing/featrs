@@ -5,7 +5,10 @@ use polars::prelude::*;
 fn test_end_to_end_pipeline() {
     // Create sample data
     let a = Column::from(Series::new("feat_a".into(), &[1.0f64, 2.0, 3.0, 4.0, 5.0]));
-    let b = Column::from(Series::new("feat_b".into(), &[10.0f64, 20.0, 30.0, 40.0, 50.0]));
+    let b = Column::from(Series::new(
+        "feat_b".into(),
+        &[10.0f64, 20.0, 30.0, 40.0, 50.0],
+    ));
     let t = Column::from(Series::new("target".into(), &[0.0f64, 0.0, 0.0, 1.0, 1.0]));
     let df = DataFrame::new(5, vec![a, b, t.clone()]).unwrap();
     let features = df.select(["feat_a", "feat_b"]).unwrap();
@@ -51,7 +54,10 @@ fn test_end_to_end_feature_selection() {
     use featrs::traits::{Fit, Transform};
 
     let a = Column::from(Series::new("const".into(), &[1.0f64, 1.0, 1.0, 1.0, 1.0]));
-    let b = Column::from(Series::new("signal".into(), &[0.0f64, 1.0, 2.0, 10.0, 11.0]));
+    let b = Column::from(Series::new(
+        "signal".into(),
+        &[0.0f64, 1.0, 2.0, 10.0, 11.0],
+    ));
     let t = Column::from(Series::new("target".into(), &[0.0f64, 0.0, 0.0, 1.0, 1.0]));
     let df = DataFrame::new(5, vec![a, b, t.clone()]).unwrap();
     let features = df.select(["const", "signal"]).unwrap();
@@ -78,7 +84,10 @@ fn test_end_to_end_feature_selection() {
 fn test_end_to_end_encoders() {
     use featrs::traits::{Fit, Transform};
 
-    let c = Column::from(Series::new("color".into(), &["red", "blue", "red", "green"]));
+    let c = Column::from(Series::new(
+        "color".into(),
+        &["red", "blue", "red", "green"],
+    ));
     let s = Column::from(Series::new("size".into(), &["S", "M", "L", "S"]));
     let df = DataFrame::new(4, vec![c, s]).unwrap();
 
@@ -106,13 +115,23 @@ fn test_end_to_end_encoders() {
 fn test_end_to_end_imputer() {
     use featrs::traits::{Fit, Transform};
 
-    let a = Column::from(Series::new("x".into(), &[Some(1.0f64), None, Some(3.0), None]));
+    let a = Column::from(Series::new(
+        "x".into(),
+        &[Some(1.0f64), None, Some(3.0), None],
+    ));
     let df = DataFrame::new(4, vec![a]).unwrap();
 
     let mut imp = featrs::preprocessing::imputer::SimpleImputer::mean();
     imp.fit(df.clone(), df.clone()).unwrap();
     let filled = imp.transform(df).unwrap();
 
-    let vals: Vec<f64> = filled.column("x").unwrap().f64().unwrap().iter().flatten().collect();
+    let vals: Vec<f64> = filled
+        .column("x")
+        .unwrap()
+        .f64()
+        .unwrap()
+        .iter()
+        .flatten()
+        .collect();
     assert_eq!(vals, vec![1.0, 2.0, 3.0, 2.0]); // mean of [1, 3] = 2
 }

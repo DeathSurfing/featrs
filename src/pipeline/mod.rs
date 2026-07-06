@@ -9,7 +9,7 @@ pub mod column_transformer;
 
 pub use column_transformer::ColumnTransformer;
 
-use crate::traits::{Fit, Result, Transform};
+use crate::traits::{Error, Fit, Result, Transform};
 use polars::prelude::*;
 
 /// Trait alias for [`Box<dyn ...>`](Box) type erasure in [`Pipeline`] and [`ColumnTransformer`].
@@ -59,7 +59,11 @@ impl Pipeline {
     ///
     /// Panics if `steps` is empty.
     pub fn new(steps: Vec<(String, Box<dyn DataFrameTransformer>)>) -> Self {
-        assert!(!steps.is_empty(), "Pipeline must have at least one step");
+        assert!(
+            !steps.is_empty(),
+            "Pipeline::new: at least one step is required. \
+             Provide a non-empty Vec of (name, transformer) pairs."
+        );
         Self { steps }
     }
 
@@ -73,14 +77,31 @@ impl Fit<DataFrame, DataFrame> for Pipeline {
     type Output = ();
 
     fn fit(&mut self, x: DataFrame, y: DataFrame) -> Result<()> {
+        if x.height() == 0 {
+            return Err(Error::InvalidInput(
+                "Pipeline.fit received a DataFrame with 0 rows.".into(),
+            ));
+        }
         let mut x_curr = x;
         let y_curr = y;
         let n = self.steps.len();
-        for (i, (_, transformer)) in self.steps.iter_mut().enumerate() {
+        for (i, (name, transformer)) in self.steps.iter_mut().enumerate() {
             let is_last = i == n - 1;
-            transformer.fit(x_curr.clone(), y_curr.clone())?;
+            transformer
+                .fit(x_curr.clone(), y_curr.clone())
+                .map_err(|e| {
+                    Error::Computation(format!(
+                        "Pipeline: step {} ('{}') failed during fit: {}",
+                        i, name, e
+                    ))
+                })?;
             if !is_last {
-                x_curr = transformer.transform(x_curr)?;
+                x_curr = transformer.transform(x_curr).map_err(|e| {
+                    Error::Computation(format!(
+                        "Pipeline: step {} ('{}') failed during intermediate transform: {}",
+                        i, name, e
+                    ))
+                })?;
             }
         }
         Ok(())
@@ -92,8 +113,13 @@ impl Transform<DataFrame> for Pipeline {
 
     fn transform(&self, x: DataFrame) -> Result<DataFrame> {
         let mut x_curr = x;
-        for (_, transformer) in &self.steps {
-            x_curr = transformer.transform(x_curr)?;
+        for (i, (name, transformer)) in self.steps.iter().enumerate() {
+            x_curr = transformer.transform(x_curr).map_err(|e| {
+                Error::Computation(format!(
+                    "Pipeline: step {} ('{}') failed during transform: {}",
+                    i, name, e
+                ))
+            })?;
         }
         Ok(x_curr)
     }

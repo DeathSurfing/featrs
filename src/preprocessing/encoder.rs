@@ -11,9 +11,15 @@ use std::collections::HashMap;
 
 fn column_unique_strings(col: &Column) -> Result<Vec<String>> {
     let s = col.as_materialized_series();
-    let ca = s
-        .str()
-        .map_err(|e| Error::Computation(format!("column '{}' is not string: {}", col.name(), e)))?;
+    let ca = s.str().map_err(|e| {
+        Error::InvalidInput(format!(
+            "Encoder: column '{}' has dtype {}; expected String. \
+             Only string columns can be encoded. {}",
+            col.name(),
+            col.dtype(),
+            e
+        ))
+    })?;
     let mut unique: Vec<String> = ca
         .iter()
         .flatten()
@@ -86,6 +92,13 @@ impl Fit<DataFrame, DataFrame> for OneHotEncoder {
     type Output = ();
 
     fn fit(&mut self, x: DataFrame, _y: DataFrame) -> Result<()> {
+        if x.height() == 0 {
+            return Err(Error::InvalidInput(
+                "OneHotEncoder.fit received a DataFrame with 0 rows. \
+                 Provide at least 1 row."
+                    .into(),
+            ));
+        }
         let mut cats = Vec::new();
 
         for col in x.columns() {
@@ -100,6 +113,15 @@ impl Fit<DataFrame, DataFrame> for OneHotEncoder {
             }
         }
 
+        if cats.is_empty() {
+            return Err(Error::InvalidInput(
+                "OneHotEncoder.fit: no string columns found. \
+                 OneHotEncoder operates on String columns only. \
+                 Cast categorical columns to String first."
+                    .into(),
+            ));
+        }
+
         self.categories = Some(cats);
         self.fitted = true;
         Ok(())
@@ -111,15 +133,34 @@ impl Transform<DataFrame> for OneHotEncoder {
 
     fn transform(&self, x: DataFrame) -> Result<DataFrame> {
         if !self.fitted {
-            return Err(Error::NotFitted("OneHotEncoder".into()));
+            return Err(Error::NotFitted(
+                "OneHotEncoder has not been fitted. \
+                 Call .fit(dataframe, target) before .transform()."
+                    .into(),
+            ));
         }
         let cats = self.categories.as_ref().unwrap();
         let mut new_cols: Vec<Column> = Vec::new();
         let n_rows = x.height();
 
         for cat in cats {
-            let s = x.column(&cat.column).unwrap().as_materialized_series();
-            let ca = s.str().unwrap();
+            let s = x.column(&cat.column).map_err(|e| {
+                Error::InvalidInput(format!(
+                    "OneHotEncoder.transform: column '{}' not found in input. \
+                     The encoder was fitted on columns: {:?}. {}",
+                    cat.column,
+                    cats.iter().map(|c| &c.column).collect::<Vec<_>>(),
+                    e
+                ))
+            })?;
+            let ca = s.as_materialized_series().str().map_err(|e| {
+                Error::InvalidInput(format!(
+                    "OneHotEncoder.transform: column '{}' has dtype {}; expected String. {}",
+                    cat.column,
+                    s.dtype(),
+                    e
+                ))
+            })?;
             let start_idx = if self.drop_first { 1 } else { 0 };
 
             for (_j, category) in cat.categories.iter().enumerate().skip(start_idx) {
@@ -183,11 +224,22 @@ impl Fit<DataFrame, DataFrame> for LabelEncoder {
 
     fn fit(&mut self, x: DataFrame, _y: DataFrame) -> Result<()> {
         if x.width() != 1 {
-            return Err(Error::InvalidInput(
-                "LabelEncoder requires a single column".into(),
-            ));
+            return Err(Error::InvalidInput(format!(
+                "LabelEncoder.fit expects a single column but got {} columns. \
+                 Select one column before calling fit, e.g. df.select(['target']).",
+                x.width()
+            )));
         }
-        let classes = column_unique_strings(&x.columns()[0])?;
+        let col = &x.columns()[0];
+        let classes = column_unique_strings(col)?;
+
+        if classes.is_empty() {
+            return Err(Error::InvalidInput(format!(
+                "LabelEncoder.fit: column '{}' contains no unique values. \
+                 Provide data with at least one non-null string.",
+                col.name()
+            )));
+        }
 
         let mapping: HashMap<String, usize> = classes
             .iter()
@@ -207,11 +259,22 @@ impl Transform<DataFrame> for LabelEncoder {
 
     fn transform(&self, x: DataFrame) -> Result<DataFrame> {
         if !self.fitted {
-            return Err(Error::NotFitted("LabelEncoder".into()));
+            return Err(Error::NotFitted(
+                "LabelEncoder has not been fitted. \
+                 Call .fit(dataframe, target) before .transform()."
+                    .into(),
+            ));
         }
         let mapping = self.mapping.as_ref().unwrap();
         let s = x.columns()[0].as_materialized_series();
-        let ca = s.str().unwrap();
+        let ca = s.str().map_err(|e| {
+            Error::InvalidInput(format!(
+                "LabelEncoder.transform: column '{}' has dtype {}; expected String. {}",
+                s.name(),
+                s.dtype(),
+                e
+            ))
+        })?;
 
         let encoded: ChunkedArray<UInt32Type> = ca
             .iter()
@@ -266,11 +329,22 @@ impl Fit<DataFrame, DataFrame> for OrdinalEncoder {
     type Output = ();
 
     fn fit(&mut self, x: DataFrame, _y: DataFrame) -> Result<()> {
+        if x.width() == 0 {
+            return Err(Error::InvalidInput(
+                "OrdinalEncoder.fit received a DataFrame with 0 columns. \
+                 Provide at least one string column to encode."
+                    .into(),
+            ));
+        }
         let mut cats = Vec::new();
 
         for col in x.columns() {
             let name = col.name().to_string();
             let classes = column_unique_strings(col)?;
+
+            if classes.is_empty() {
+                continue;
+            }
 
             let mapping: HashMap<String, u32> = classes
                 .iter()
@@ -279,6 +353,14 @@ impl Fit<DataFrame, DataFrame> for OrdinalEncoder {
                 .collect();
 
             cats.push((name, mapping));
+        }
+
+        if cats.is_empty() {
+            return Err(Error::InvalidInput(
+                "OrdinalEncoder.fit: no string columns found. \
+                 OrdinalEncoder operates on String columns only."
+                    .into(),
+            ));
         }
 
         self.categories = Some(cats);
@@ -292,13 +374,37 @@ impl Transform<DataFrame> for OrdinalEncoder {
 
     fn transform(&self, x: DataFrame) -> Result<DataFrame> {
         if !self.fitted {
-            return Err(Error::NotFitted("OrdinalEncoder".into()));
+            return Err(Error::NotFitted(
+                "OrdinalEncoder has not been fitted. \
+                 Call .fit(dataframe, target) before .transform()."
+                    .into(),
+            ));
         }
         let mut out_cols = Vec::new();
 
         for (name, mapping) in self.categories.as_ref().unwrap() {
-            let s = x.column(name.as_str()).unwrap().as_materialized_series();
-            let ca = s.str().unwrap();
+            let s = x.column(name.as_str()).map_err(|e| {
+                Error::InvalidInput(format!(
+                    "OrdinalEncoder.transform: column '{}' not found. \
+                     The encoder was fitted on columns: {:?}. {}",
+                    name,
+                    self.categories
+                        .as_ref()
+                        .unwrap()
+                        .iter()
+                        .map(|(n, _)| n)
+                        .collect::<Vec<_>>(),
+                    e
+                ))
+            })?;
+            let ca = s.as_materialized_series().str().map_err(|e| {
+                Error::InvalidInput(format!(
+                    "OrdinalEncoder.transform: column '{}' has dtype {}; expected String. {}",
+                    name,
+                    s.dtype(),
+                    e
+                ))
+            })?;
 
             let encoded: ChunkedArray<UInt32Type> = ca
                 .iter()
