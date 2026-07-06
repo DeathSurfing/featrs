@@ -11,6 +11,9 @@ use polars::prelude::*;
 /// Features with variance below `threshold` are removed. By default (threshold `0.0`),
 /// only constant features are removed.
 ///
+/// Only `Float64` columns are considered; columns of other dtypes are silently
+/// dropped from the output.
+///
 /// # Example
 ///
 /// ```rust
@@ -44,10 +47,10 @@ impl Default for VarianceThreshold {
     }
 }
 
-impl Fit<DataFrame, DataFrame> for VarianceThreshold {
+impl Fit<DataFrame> for VarianceThreshold {
     type Output = ();
 
-    fn fit(&mut self, x: DataFrame, _y: DataFrame) -> Result<()> {
+    fn fit(&mut self, x: DataFrame) -> Result<()> {
         if x.width() == 0 {
             return Err(Error::InvalidInput(
                 "VarianceThreshold.fit received a DataFrame with 0 columns. \
@@ -146,9 +149,8 @@ mod tests {
     fn test_variance_threshold_removes_low_var() {
         let mut vt = VarianceThreshold::new(0.1);
         let df = make_test_df();
-        let y = df.clone();
 
-        vt.fit(df.clone(), y).unwrap();
+        vt.fit(df.clone()).unwrap();
         let result = vt.transform(df).unwrap();
 
         assert_eq!(result.width(), 1);
@@ -159,9 +161,8 @@ mod tests {
     fn test_variance_threshold_zero_keeps_all() {
         let mut vt = VarianceThreshold::new(0.0);
         let df = make_test_df();
-        let y = df.clone();
 
-        vt.fit(df.clone(), y).unwrap();
+        vt.fit(df.clone()).unwrap();
         let result = vt.transform(df).unwrap();
 
         assert_eq!(result.width(), 2);

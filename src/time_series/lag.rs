@@ -42,10 +42,10 @@ impl Lagger {
     }
 }
 
-impl Fit<DataFrame, DataFrame> for Lagger {
+impl Fit<DataFrame> for Lagger {
     type Output = ();
 
-    fn fit(&mut self, x: DataFrame, _y: DataFrame) -> Result<()> {
+    fn fit(&mut self, x: DataFrame) -> Result<()> {
         if self.columns.is_empty() {
             return Err(Error::InvalidInput(
                 "Lagger: at least one column name is required.".into(),
@@ -111,9 +111,8 @@ mod tests {
         let vals = Column::from(Series::new("x".into(), &[1.0f64, 2.0, 3.0, 4.0, 5.0]));
         let df = DataFrame::new(5, vec![vals]).unwrap();
         let mut lagger = Lagger::new(&["x"], &[1, 2]);
-        let y = df.clone();
 
-        lagger.fit(df.clone(), y).unwrap();
+        lagger.fit(df.clone()).unwrap();
         let result = lagger.transform(df).unwrap();
 
         assert_eq!(result.width(), 3); // x, x_lag_1, x_lag_2

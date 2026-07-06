@@ -71,10 +71,10 @@ impl Default for StandardScaler {
     }
 }
 
-impl Fit<DataFrame, DataFrame> for StandardScaler {
+impl Fit<DataFrame> for StandardScaler {
     type Output = ();
 
-    fn fit(&mut self, x: DataFrame, _y: DataFrame) -> Result<()> {
+    fn fit(&mut self, x: DataFrame) -> Result<()> {
         let n_cols = x.width();
         if x.height() == 0 || n_cols == 0 {
             return Err(Error::InvalidInput(
@@ -226,10 +226,10 @@ impl Default for MinMaxScaler {
     }
 }
 
-impl Fit<DataFrame, DataFrame> for MinMaxScaler {
+impl Fit<DataFrame> for MinMaxScaler {
     type Output = ();
 
-    fn fit(&mut self, x: DataFrame, _y: DataFrame) -> Result<()> {
+    fn fit(&mut self, x: DataFrame) -> Result<()> {
         if x.height() == 0 || x.width() == 0 {
             return Err(Error::InvalidInput(
                 "MinMaxScaler.fit received an empty DataFrame (0 rows or 0 columns). \
@@ -391,10 +391,10 @@ fn percentile_sorted(sorted: &[f64], p: f64) -> f64 {
     }
 }
 
-impl Fit<DataFrame, DataFrame> for RobustScaler {
+impl Fit<DataFrame> for RobustScaler {
     type Output = ();
 
-    fn fit(&mut self, x: DataFrame, _y: DataFrame) -> Result<()> {
+    fn fit(&mut self, x: DataFrame) -> Result<()> {
         if x.height() == 0 || x.width() == 0 {
             return Err(Error::InvalidInput(
                 "RobustScaler.fit received an empty DataFrame (0 rows or 0 columns). \
@@ -493,9 +493,8 @@ mod tests {
     fn test_standard_scaler_fit_transform() {
         let mut scaler = StandardScaler::new();
         let df = make_test_df();
-        let y = df.clone();
 
-        scaler.fit(df.clone(), y).unwrap();
+        scaler.fit(df.clone()).unwrap();
         let result = scaler.transform(df).unwrap();
 
         let scaled_a = result.column("a").unwrap().f64().unwrap();
@@ -510,9 +509,8 @@ mod tests {
     fn test_min_max_scaler() {
         let mut scaler = MinMaxScaler::new();
         let df = make_test_df();
-        let y = df.clone();
 
-        scaler.fit(df.clone(), y).unwrap();
+        scaler.fit(df.clone()).unwrap();
         let result = scaler.transform(df).unwrap();
 
         let vals: Vec<f64> = result
@@ -532,9 +530,8 @@ mod tests {
     fn test_robust_scaler() {
         let mut scaler = RobustScaler::new();
         let df = make_test_df();
-        let y = df.clone();
 
-        scaler.fit(df.clone(), y).unwrap();
+        scaler.fit(df.clone()).unwrap();
         let result = scaler.transform(df).unwrap();
 
         let vals: Vec<f64> = result
@@ -566,7 +563,7 @@ mod tests {
         let df = DataFrame::new(4, vec![a]).unwrap();
         let mut scaler = RobustScaler::new();
         // fit must not panic on the NaN-bearing sort.
-        scaler.fit(df.clone(), df.clone()).unwrap();
+        scaler.fit(df.clone()).unwrap();
         let _ = scaler.transform(df).unwrap();
     }
 }

@@ -45,10 +45,10 @@ impl Default for Binarizer {
     }
 }
 
-impl Fit<DataFrame, DataFrame> for Binarizer {
+impl Fit<DataFrame> for Binarizer {
     type Output = ();
 
-    fn fit(&mut self, x: DataFrame, _y: DataFrame) -> Result<()> {
+    fn fit(&mut self, x: DataFrame) -> Result<()> {
         if x.width() == 0 {
             return Err(Error::InvalidInput(
                 "Binarizer.fit received a DataFrame with 0 columns. \
@@ -109,9 +109,8 @@ mod tests {
         let mut b = Binarizer::default();
         let a = Column::from(Series::new("x".into(), &[-1.0f64, 0.0, 2.0]));
         let df = DataFrame::new(3, vec![a]).unwrap();
-        let y = df.clone();
 
-        b.fit(df.clone(), y).unwrap();
+        b.fit(df.clone()).unwrap();
         let result = b.transform(df).unwrap();
 
         let vals: Vec<f64> = result
@@ -132,9 +131,8 @@ mod tests {
         let mut b = Binarizer::new(5.0);
         let a = Column::from(Series::new("x".into(), &[1.0f64, 5.0, 10.0]));
         let df = DataFrame::new(3, vec![a]).unwrap();
-        let y = df.clone();
 
-        b.fit(df.clone(), y).unwrap();
+        b.fit(df.clone()).unwrap();
         let result = b.transform(df).unwrap();
 
         let vals: Vec<f64> = result

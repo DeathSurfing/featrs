@@ -60,11 +60,11 @@ fn series_mul(a: &Series, b: &Series) -> Result<Series> {
 /// use featrs::preprocessing::polynomial_features::PolynomialFeatures;
 /// use featrs::traits::{Fit, Transform};
 ///
-/// let mut pf = PolynomialFeatures::new(2)
+/// let mut pf = PolynomialFeatures::new(2).unwrap()
 ///     .include_bias(true)
 ///     .interaction_only(false);
 /// # let df = polars::prelude::DataFrame::new(0usize, vec![]).unwrap();
-/// // pf.fit(df.clone(), target)?;
+/// // pf.fit(df.clone())?;
 /// // let result = pf.transform(df)?;
 /// ```
 pub struct PolynomialFeatures {
@@ -78,21 +78,20 @@ pub struct PolynomialFeatures {
 impl PolynomialFeatures {
     /// Create a new `PolynomialFeatures` with the given maximum degree.
     ///
-    /// # Panics
-    ///
-    /// Panics if `degree` is `0`.
-    pub fn new(degree: usize) -> Self {
-        assert!(
-            degree >= 1,
-            "PolynomialFeatures::new: degree must be >= 1, got {degree}"
-        );
-        Self {
+    /// Returns [`Error::InvalidInput`] if `degree` is `0`.
+    pub fn new(degree: usize) -> Result<Self> {
+        if degree == 0 {
+            return Err(Error::InvalidInput(format!(
+                "PolynomialFeatures::new: degree must be >= 1, got {degree}"
+            )));
+        }
+        Ok(Self {
             fitted: false,
             degree,
             interaction_only: false,
             include_bias: true,
             input_columns: None,
-        }
+        })
     }
 
     /// Create a builder for more ergonomic configuration.
@@ -106,7 +105,8 @@ impl PolynomialFeatures {
     ///     .degree(3)
     ///     .include_bias(false)
     ///     .interaction_only(true)
-    ///     .build();
+    ///     .build()
+    ///     .unwrap();
     /// ```
     pub fn builder() -> PolynomialFeaturesBuilder {
         PolynomialFeaturesBuilder::default()
@@ -195,11 +195,8 @@ pub struct PolynomialFeaturesBuilder {
 impl PolynomialFeaturesBuilder {
     /// Set the maximum degree of polynomial features. Required.
     ///
-    /// # Panics
-    ///
-    /// Panics if `degree` is `0`.
+    /// `degree == 0` is rejected at [`build`](PolynomialFeaturesBuilder::build) time.
     pub fn degree(mut self, degree: usize) -> Self {
-        assert!(degree >= 1, "degree must be >= 1, got {degree}");
         self.degree = Some(degree);
         self
     }
@@ -218,35 +215,47 @@ impl PolynomialFeaturesBuilder {
 
     /// Build the `PolynomialFeatures` instance.
     ///
-    /// # Panics
-    ///
-    /// Panics if `degree` was not set.
-    pub fn build(self) -> PolynomialFeatures {
-        let Some(degree) = self.degree else {
-            panic!(
+    /// Returns [`Error::InvalidInput`] if `degree` was not set or is `0`.
+    pub fn build(self) -> Result<PolynomialFeatures> {
+        let degree = self.degree.ok_or_else(|| {
+            Error::InvalidInput(
                 "PolynomialFeaturesBuilder: degree is required. Call .degree(n) before .build()."
-            );
-        };
-        PolynomialFeatures {
+                    .into(),
+            )
+        })?;
+        if degree == 0 {
+            return Err(Error::InvalidInput(
+                "PolynomialFeaturesBuilder: degree must be >= 1, got 0".into(),
+            ));
+        }
+        Ok(PolynomialFeatures {
             fitted: false,
             degree,
             interaction_only: self.interaction_only,
             include_bias: self.include_bias,
             input_columns: None,
-        }
+        })
     }
 }
 
 impl Default for PolynomialFeatures {
     fn default() -> Self {
-        Self::new(2)
+        // `new(2)` always succeeds; construct directly to avoid unwrapping a
+        // `Result` in `Default::default`.
+        Self {
+            fitted: false,
+            degree: 2,
+            interaction_only: false,
+            include_bias: true,
+            input_columns: None,
+        }
     }
 }
 
-impl Fit<DataFrame, DataFrame> for PolynomialFeatures {
+impl Fit<DataFrame> for PolynomialFeatures {
     type Output = ();
 
-    fn fit(&mut self, x: DataFrame, _y: DataFrame) -> Result<()> {
+    fn fit(&mut self, x: DataFrame) -> Result<()> {
         if x.height() == 0 || x.width() == 0 {
             return Err(Error::InvalidInput(
                 "PolynomialFeatures.fit received an empty DataFrame (0 rows or 0 columns).".into(),
@@ -385,11 +394,10 @@ mod tests {
 
     #[test]
     fn test_polynomial_features_fit_transform() {
-        let mut pf = PolynomialFeatures::new(2).include_bias(true);
+        let mut pf = PolynomialFeatures::new(2).unwrap().include_bias(true);
         let df = make_test_df();
-        let y = df.clone();
 
-        pf.fit(df.clone(), y).unwrap();
+        pf.fit(df.clone()).unwrap();
         let result = pf.transform(df).unwrap();
 
         assert_eq!(result.width(), 6);
@@ -398,11 +406,10 @@ mod tests {
 
     #[test]
     fn test_polynomial_features_no_bias() {
-        let mut pf = PolynomialFeatures::new(2).include_bias(false);
+        let mut pf = PolynomialFeatures::new(2).unwrap().include_bias(false);
         let df = make_test_df();
-        let y = df.clone();
 
-        pf.fit(df.clone(), y).unwrap();
+        pf.fit(df.clone()).unwrap();
         let result = pf.transform(df).unwrap();
 
         assert_eq!(result.width(), 5);
@@ -411,12 +418,12 @@ mod tests {
     #[test]
     fn test_polynomial_features_interaction_only() {
         let mut pf = PolynomialFeatures::new(2)
+            .unwrap()
             .include_bias(false)
             .interaction_only(true);
         let df = make_test_df();
-        let y = df.clone();
 
-        pf.fit(df.clone(), y).unwrap();
+        pf.fit(df.clone()).unwrap();
         let result = pf.transform(df).unwrap();
 
         assert_eq!(result.width(), 1);

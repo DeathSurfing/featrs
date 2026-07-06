@@ -14,7 +14,7 @@ Built on [Polars](https://pola.rs) — all transformations operate natively on `
 
 ```toml
 [dependencies]
-featrs = "0.2"
+featrs = "0.3"
 ```
 
 ## Quick start
@@ -23,7 +23,7 @@ featrs = "0.2"
 use featrs::prelude::*;
 
 let mut scaler = StandardScaler::new();
-scaler.fit(data.clone(), target)?;
+scaler.fit(data.clone())?;
 let scaled = scaler.transform(data)?;
 ```
 
@@ -61,7 +61,7 @@ let scaled = scaler.transform(data)?;
 use featrs::prelude::*;
 
 let mut scaler = StandardScaler::new();
-scaler.fit(df.clone(), target.clone())?;
+scaler.fit(df.clone())?;
 let scaled = scaler.transform(df)?;
 ```
 
@@ -72,9 +72,9 @@ use featrs::prelude::*;
 
 let mut pipeline = Pipeline::new(vec![
     ("scale".into(), Box::new(StandardScaler::new())),
-    ("poly".into(), Box::new(PolynomialFeatures::new(2))),
-]);
-pipeline.fit(df.clone(), target)?;
+    ("poly".into(), Box::new(PolynomialFeatures::new(2)?)),
+])?;
+pipeline.fit(df.clone())?;
 let result = pipeline.transform(df)?;
 ```
 
@@ -98,7 +98,7 @@ let pf = PolynomialFeatures::builder()
     .degree(3)
     .include_bias(false)
     .interaction_only(true)
-    .build();
+    .build()?;
 ```
 
 ### Feature Selection
@@ -107,7 +107,7 @@ let pf = PolynomialFeatures::builder()
 use featrs::prelude::*;
 
 let mut vt = VarianceThreshold::new(0.01);
-vt.fit(features.clone(), target.clone())?;
+vt.fit(features.clone())?;
 let filtered = vt.transform(features)?;
 
 let mut skb = SelectKBest::new(5, Box::new(FClassif::new()));
@@ -121,7 +121,7 @@ let selected = skb.transform(features)?;
 use featrs::prelude::*;
 
 let mut lagger = Lagger::new(&["sales", "revenue"], &[1, 7, 30]);
-lagger.fit(df.clone(), target)?;
+lagger.fit(df.clone())?;
 let lagged = lagger.transform(df)?;  // adds sales_lag_1, sales_lag_7, ...
 ```
 
@@ -132,7 +132,7 @@ use featrs::prelude::*;
 use featrs::time_series::rolling::RollingFn;
 
 let mut rolling = RollingAggregator::new(&["price"], 7, RollingFn::Mean);
-rolling.fit(df.clone(), target)?;
+rolling.fit(df.clone())?;
 let result = rolling.transform(df)?;  // adds price_mean_7
 ```
 
@@ -142,11 +142,11 @@ let result = rolling.transform(df)?;  // adds price_mean_7
 use featrs::prelude::*;
 
 let mut diff = Difference::diff(&["sales"], 1);
-diff.fit(df.clone(), target)?;
+diff.fit(df.clone())?;
 let result = diff.transform(df)?;  // adds sales_diff_1
 
 let mut pct = Difference::pct_change(&["price"], 1);
-pct.fit(df.clone(), target)?;
+pct.fit(df.clone())?;
 let result = pct.transform(df)?;  // adds price_pct_1
 ```
 
@@ -156,7 +156,7 @@ let result = pct.transform(df)?;  // adds price_pct_1
 use featrs::prelude::*;
 
 let mut enc = CyclicalEncoder::new(&["hour"], 24);
-enc.fit(df.clone(), target)?;
+enc.fit(df.clone())?;
 let result = enc.transform(df)?;  // adds hour_sin, hour_cos
 ```
 
@@ -166,7 +166,7 @@ let result = enc.transform(df)?;  // adds hour_sin, hour_cos
 use featrs::prelude::*;
 
 let mut fh = FeatureHasher::new(&["user_id", "category"], 100);
-fh.fit(df.clone(), target)?;
+fh.fit(df.clone())?;
 let hashed = fh.transform(df)?;  // 100 hashed columns
 ```
 
@@ -176,7 +176,7 @@ let hashed = fh.transform(df)?;  // 100 hashed columns
 use featrs::prelude::*;
 
 let mut ind = MissingIndicator::all();
-ind.fit(df.clone(), target)?;
+ind.fit(df.clone())?;
 let marked = ind.transform(df)?;  // adds {col}_missing where nulls exist
 ```
 
@@ -188,7 +188,7 @@ use featrs::prelude::*;
 let mut atd = AutoTypeDetector::new()
     .cat_threshold(30)     // one-hot if < 30 unique values
     .hash_buckets(200);    // hash to 200 buckets otherwise
-atd.fit(df.clone(), target)?;
+atd.fit(df.clone())?;
 let result = atd.transform(df)?;
 ```
 

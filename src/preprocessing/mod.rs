@@ -9,6 +9,7 @@ pub mod binarizer;
 pub mod encoder;
 pub mod feature_hasher;
 pub mod imputer;
+pub mod missing_indicator;
 pub mod normalizer;
 pub mod polynomial_features;
 pub mod scaler;

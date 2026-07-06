@@ -69,10 +69,10 @@ impl ColumnTransformer {
     }
 }
 
-impl Fit<DataFrame, DataFrame> for ColumnTransformer {
+impl Fit<DataFrame> for ColumnTransformer {
     type Output = ();
 
-    fn fit(&mut self, x: DataFrame, _y: DataFrame) -> Result<()> {
+    fn fit(&mut self, x: DataFrame) -> Result<()> {
         if x.width() == 0 {
             return Err(Error::InvalidInput(
                 "ColumnTransformer.fit received a DataFrame with 0 columns.".into(),
@@ -93,8 +93,7 @@ impl Fit<DataFrame, DataFrame> for ColumnTransformer {
                     e
                 ))
             })?;
-            let y_dummy = subset.clone();
-            transformer.fit(subset, y_dummy).map_err(|e| {
+            transformer.fit(subset).map_err(|e| {
                 Error::Computation(format!(
                     "ColumnTransformer: transformer '{}' failed during fit: {}",
                     t_name, e
@@ -202,9 +201,8 @@ mod tests {
             Remainder::Passthrough,
         );
         let df = make_test_df();
-        let y = df.clone();
 
-        ct.fit(df.clone(), y).unwrap();
+        ct.fit(df.clone()).unwrap();
         let result = ct.transform(df).unwrap();
         assert_eq!(result.width(), 3);
     }

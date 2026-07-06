@@ -78,10 +78,10 @@ impl Default for Normalizer {
     }
 }
 
-impl Fit<DataFrame, DataFrame> for Normalizer {
+impl Fit<DataFrame> for Normalizer {
     type Output = ();
 
-    fn fit(&mut self, x: DataFrame, _y: DataFrame) -> Result<()> {
+    fn fit(&mut self, x: DataFrame) -> Result<()> {
         if x.width() == 0 {
             return Err(Error::InvalidInput(
                 "Normalizer.fit received a DataFrame with 0 columns. \
@@ -175,9 +175,8 @@ mod tests {
     fn test_l2_normalization() {
         let mut n = Normalizer::l2();
         let df = make_test_df();
-        let y = df.clone();
 
-        n.fit(df.clone(), y).unwrap();
+        n.fit(df.clone()).unwrap();
         let result = n.transform(df).unwrap();
 
         let col_a = result.column("a").unwrap().f64().unwrap();
@@ -191,9 +190,8 @@ mod tests {
     fn test_l1_normalization() {
         let mut n = Normalizer::l1();
         let df = make_test_df();
-        let y = df.clone();
 
-        n.fit(df.clone(), y).unwrap();
+        n.fit(df.clone()).unwrap();
         let result = n.transform(df).unwrap();
 
         let col_a = result.column("a").unwrap().f64().unwrap();
@@ -206,9 +204,8 @@ mod tests {
     fn test_max_normalization() {
         let mut n = Normalizer::max();
         let df = make_test_df();
-        let y = df.clone();
 
-        n.fit(df.clone(), y).unwrap();
+        n.fit(df.clone()).unwrap();
         let result = n.transform(df).unwrap();
 
         let col_a = result.column("a").unwrap().f64().unwrap();

@@ -87,10 +87,10 @@ impl Default for AutoTypeDetector {
     }
 }
 
-impl Fit<DataFrame, DataFrame> for AutoTypeDetector {
+impl Fit<DataFrame> for AutoTypeDetector {
     type Output = ();
 
-    fn fit(&mut self, x: DataFrame, _y: DataFrame) -> Result<()> {
+    fn fit(&mut self, x: DataFrame) -> Result<()> {
         let mut types = Vec::new();
         let mut encoders: Vec<(String, Box<dyn DataFrameTransformer>)> = Vec::new();
 
@@ -132,7 +132,7 @@ impl Fit<DataFrame, DataFrame> for AutoTypeDetector {
                         .select([name.as_str()])
                         .map_err(|e| Error::Computation(e.to_string()))?;
                     let mut enc = OneHotEncoder::new();
-                    enc.fit(subset.clone(), subset.clone()).map_err(|e| {
+                    enc.fit(subset.clone()).map_err(|e| {
                         Error::Computation(format!(
                             "AutoType.fit: one-hot failed on '{}': {}",
                             name, e
@@ -146,7 +146,7 @@ impl Fit<DataFrame, DataFrame> for AutoTypeDetector {
                         .select([name.as_str()])
                         .map_err(|e| Error::Computation(e.to_string()))?;
                     let mut fh = FeatureHasher::new(&[name.as_str()], self.hash_buckets);
-                    fh.fit(subset.clone(), subset.clone()).map_err(|e| {
+                    fh.fit(subset.clone()).map_err(|e| {
                         Error::Computation(format!(
                             "AutoType.fit: hashing failed on '{}': {}",
                             name, e
@@ -262,7 +262,7 @@ mod tests {
     fn test_auto_type_detect_and_transform() {
         let mut atd = AutoTypeDetector::new().cat_threshold(5).hash_buckets(8);
         let df = make_test_df();
-        atd.fit(df.clone(), df.clone()).unwrap();
+        atd.fit(df.clone()).unwrap();
 
         // `cat` has 2 uniques (< threshold 5) -> Categorical; `high` has 3
         // uniques but threshold is 5 so also Categorical here. Bump threshold
@@ -288,7 +288,7 @@ mod tests {
     fn test_auto_type_transform_is_idempotent() {
         let mut atd = AutoTypeDetector::new().cat_threshold(5).hash_buckets(8);
         let df = make_test_df();
-        atd.fit(df.clone(), df.clone()).unwrap();
+        atd.fit(df.clone()).unwrap();
 
         let out1 = atd.transform(df.clone()).unwrap();
         let out2 = atd.transform(df).unwrap();

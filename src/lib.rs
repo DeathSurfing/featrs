@@ -59,6 +59,7 @@ pub mod prelude {
     pub use crate::preprocessing::feature_hasher::FeatureHasher;
     pub use crate::preprocessing::imputer::SimpleImputer;
     pub use crate::preprocessing::imputer::Strategy;
+    pub use crate::preprocessing::missing_indicator::MissingIndicator;
     pub use crate::preprocessing::normalizer::Norm;
     pub use crate::preprocessing::normalizer::Normalizer;
     pub use crate::preprocessing::polynomial_features::PolynomialFeatures;
@@ -70,8 +71,7 @@ pub mod prelude {
     pub use crate::time_series::diff::Difference;
     pub use crate::time_series::lag::Lagger;
     pub use crate::time_series::rolling::RollingAggregator;
-    pub use crate::traits::missing_indicator::MissingIndicator;
-    pub use crate::traits::{Error, Fit, FitTransform, Result, Transform};
+    pub use crate::traits::{Error, Fit, FitSupervised, FitTransform, Result, Transform};
 }
 
 // --- Shallow re-exports at crate root ---

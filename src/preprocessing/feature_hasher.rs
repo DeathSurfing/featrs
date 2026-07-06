@@ -2,7 +2,10 @@
 //!
 //! [`FeatureHasher`] maps categorical features into a fixed-size vector
 //! using a hash function, enabling memory-efficient encoding of
-//! high-cardinality categories.
+//! high-cardinality categories. Uses the signed hashing trick
+//! (Weinberger et al. 2009): a second independent hash determines the sign
+//! (`+1.0` / `-1.0`) of each addition, so the expected value of every bucket
+//! is zero and collisions do not bias the mean.
 
 use crate::traits::{Error, Fit, Result, Transform};
 use polars::prelude::*;
@@ -11,9 +14,10 @@ use std::hash::{Hash, Hasher};
 
 /// Map categorical columns to a fixed number of hash buckets.
 ///
-/// Each string cell is hashed to `0..n_features` and the corresponding
-/// bucket is incremented by 1.0. This avoids storing a category mapping
-/// and works with unseen categories at transform time.
+/// Each string cell is mapped to a `(bucket, sign)` pair via two independent
+/// hashes; the bucket is incremented by `sign` (`+1.0` or `-1.0`). This avoids
+/// storing a category mapping, works with unseen categories at transform time,
+/// and (unlike an unsigned trick) preserves a zero mean in expectation.
 ///
 /// # Example
 ///
@@ -23,7 +27,7 @@ use std::hash::{Hash, Hasher};
 ///
 /// let mut fh = FeatureHasher::new(&["text", "category"], 100);
 /// # let df = polars::prelude::DataFrame::new(0usize, vec![]).unwrap();
-/// // fh.fit(df.clone(), target)?;
+/// // fh.fit(df.clone())?;
 /// // let hashed = fh.transform(df)?;
 /// ```
 pub struct FeatureHasher {
@@ -45,17 +49,28 @@ impl FeatureHasher {
         }
     }
 
-    fn hash_to_index(s: &str, n: usize) -> usize {
-        let mut hasher = DefaultHasher::new();
-        s.hash(&mut hasher);
-        (hasher.finish() as usize) % n
+    /// Map `s` to a `(bucket, sign)` pair. Two independent `DefaultHasher`
+    /// instances (seeded differently) produce the index and the sign bit, so
+    /// collisions across the two are uncorrelated.
+    fn hash_to_bucket(s: &str, n: usize) -> (usize, f64) {
+        let mut h_idx = DefaultHasher::new();
+        0u8.hash(&mut h_idx);
+        s.hash(&mut h_idx);
+        let idx = (h_idx.finish() as usize) % n;
+
+        let mut h_sign = DefaultHasher::new();
+        1u8.hash(&mut h_sign);
+        s.hash(&mut h_sign);
+        let sign = if h_sign.finish() & 1 == 1 { 1.0 } else { -1.0 };
+
+        (idx, sign)
     }
 }
 
-impl Fit<DataFrame, DataFrame> for FeatureHasher {
+impl Fit<DataFrame> for FeatureHasher {
     type Output = ();
 
-    fn fit(&mut self, x: DataFrame, _y: DataFrame) -> Result<()> {
+    fn fit(&mut self, x: DataFrame) -> Result<()> {
         if self.n_features == 0 {
             return Err(Error::InvalidInput(
                 "FeatureHasher: n_features must be >= 1.".into(),
@@ -104,8 +119,8 @@ impl Transform<DataFrame> for FeatureHasher {
             })?;
             for (i, opt) in ca.iter().enumerate() {
                 if let Some(val) = opt {
-                    let idx = Self::hash_to_index(val, self.n_features);
-                    buckets[idx][i] += 1.0;
+                    let (idx, sign) = Self::hash_to_bucket(val, self.n_features);
+                    buckets[idx][i] += sign;
                 }
             }
         }
@@ -129,12 +144,47 @@ mod tests {
         let c = Column::from(Series::new("color".into(), &["red", "blue", "red"]));
         let df = DataFrame::new(3, vec![c]).unwrap();
         let mut fh = FeatureHasher::new(&["color"], 10);
-        let y = df.clone();
 
-        fh.fit(df.clone(), y).unwrap();
+        fh.fit(df.clone()).unwrap();
         let result = fh.transform(df).unwrap();
 
         assert_eq!(result.width(), 10);
         assert_eq!(result.height(), 3);
+    }
+
+    /// The signed hashing trick: `hash_to_bucket` returns a valid index and a
+    /// sign of exactly `+1.0` or `-1.0`, and is deterministic across calls.
+    #[test]
+    fn test_hash_to_bucket_signed_and_deterministic() {
+        for s in &["red", "blue", "green", "x", "y", "a very long category"] {
+            let (idx, sign) = FeatureHasher::hash_to_bucket(s, 64);
+            assert!(idx < 64, "index out of range for '{s}'");
+            assert!(sign == 1.0 || sign == -1.0, "sign must be ±1 for '{s}'");
+            // Determinism: same input, same output.
+            let (idx2, sign2) = FeatureHasher::hash_to_bucket(s, 64);
+            assert_eq!((idx, sign), (idx2, sign2));
+        }
+    }
+
+    /// Every non-zero bucket value produced by `transform` must be an integer
+    /// in `-1..=1` per single occurrence; summing repeated occurrences stays
+    /// an integer (the signed trick never produces fractional magnitudes).
+    #[test]
+    fn test_feature_hasher_signed_values() {
+        let c = Column::from(Series::new(
+            "color".into(),
+            &["red", "blue", "red", "green", "blue"],
+        ));
+        let df = DataFrame::new(5, vec![c]).unwrap();
+        let mut fh = FeatureHasher::new(&["color"], 32);
+        fh.fit(df.clone()).unwrap();
+        let result = fh.transform(df).unwrap();
+
+        for col in result.columns() {
+            for v in col.as_materialized_series().f64().unwrap().iter().flatten() {
+                let frac = v.fract();
+                assert!(frac == 0.0, "bucket value {v} must be integral");
+            }
+        }
     }
 }
