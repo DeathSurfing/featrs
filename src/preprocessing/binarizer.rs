@@ -1,15 +1,35 @@
+//! Feature binarization.
+//!
+//! [`Binarizer`] thresholds numeric features: values above the threshold
+//! become `1.0`, others become `0.0`.
+
 use crate::traits::{Error, Fit, Result, Transform};
 use polars::prelude::*;
 
-/// Binarize data (set feature values to 0 or 1) according to a threshold.
+/// Binarize data according to a threshold.
 ///
-/// Corresponds to `sklearn.preprocessing.Binarizer`.
+/// Values `> threshold` become `1.0`; all others become `0.0`.
+///
+/// # Example
+///
+/// ```rust
+/// use featrs::preprocessing::binarizer::Binarizer;
+/// use featrs::traits::{Fit, Transform};
+///
+/// let mut b = Binarizer::new(0.5);
+/// # let df = polars::prelude::DataFrame::new(0usize, vec![]).unwrap();
+/// // b.fit(df.clone(), target)?;
+/// // let binarized = b.transform(df)?;
+/// ```
 pub struct Binarizer {
     fitted: bool,
     threshold: f64,
 }
 
 impl Binarizer {
+    /// Create a new `Binarizer` with the given threshold.
+    ///
+    /// Values strictly greater than `threshold` are set to `1.0`.
     pub fn new(threshold: f64) -> Self {
         Self {
             fitted: false,

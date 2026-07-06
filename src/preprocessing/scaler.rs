@@ -1,3 +1,10 @@
+//! Feature scaling and centering.
+//!
+//! Analogous to `sklearn.preprocessing.scaler`. Provides:
+//! - [`StandardScaler`] — z-score normalization
+//! - [`MinMaxScaler`] — min-max scaling to a range
+//! - [`RobustScaler`] — scaling robust to outliers via IQR
+
 use polars::prelude::*;
 
 use crate::traits::{Error, Fit, Result, Transform};
@@ -21,7 +28,20 @@ fn numeric_f64_columns(df: &DataFrame) -> Vec<String> {
 
 /// Standardize features by removing the mean and scaling to unit variance.
 ///
-/// Corresponds to `sklearn.preprocessing.StandardScaler`.
+/// For each column `x`, computes `(x - mean) / std` where `mean` and `std`
+/// are learned from the training data.
+///
+/// # Example
+///
+/// ```rust
+/// use featrs::preprocessing::scaler::StandardScaler;
+/// use featrs::traits::{Fit, Transform};
+///
+/// let mut scaler = StandardScaler::new();
+/// # let df = polars::prelude::DataFrame::new(0usize, vec![]).unwrap();
+/// // scaler.fit(df.clone(), target)?;
+/// // let scaled = scaler.transform(df)?;
+/// ```
 pub struct StandardScaler {
     fitted: bool,
     params: Option<Vec<ScaleParam>>,
@@ -36,6 +56,9 @@ struct ScaleParam {
 }
 
 impl StandardScaler {
+    /// Create a new `StandardScaler`.
+    ///
+    /// Both centering and scaling are enabled by default.
     pub fn new() -> Self {
         Self {
             fitted: false,
@@ -45,11 +68,13 @@ impl StandardScaler {
         }
     }
 
+    /// Whether to center the data by subtracting the mean (default: `true`).
     pub fn with_mean(mut self, value: bool) -> Self {
         self.with_mean = value;
         self
     }
 
+    /// Whether to scale the data to unit variance (default: `true`).
     pub fn with_std(mut self, value: bool) -> Self {
         self.with_std = value;
         self
@@ -162,9 +187,21 @@ impl Transform<DataFrame> for StandardScaler {
     }
 }
 
-/// Scale features to a given range (default [0, 1]).
+/// Scale features to a given range (default `[0, 1]`).
 ///
-/// Corresponds to `sklearn.preprocessing.MinMaxScaler`.
+/// For each column `x`, computes `(x - min) / (max - min) * range + range_min`.
+///
+/// # Example
+///
+/// ```rust
+/// use featrs::preprocessing::scaler::MinMaxScaler;
+/// use featrs::traits::{Fit, Transform};
+///
+/// let mut scaler = MinMaxScaler::new().feature_range((-1.0, 1.0));
+/// # let df = polars::prelude::DataFrame::new(0usize, vec![]).unwrap();
+/// // scaler.fit(df.clone(), target)?;
+/// // let scaled = scaler.transform(df)?;
+/// ```
 pub struct MinMaxScaler {
     fitted: bool,
     params: Option<Vec<MinMaxParam>>,
@@ -178,6 +215,7 @@ struct MinMaxParam {
 }
 
 impl MinMaxScaler {
+    /// Create a new `MinMaxScaler` that scales to `[0, 1]`.
     pub fn new() -> Self {
         Self {
             fitted: false,
@@ -186,6 +224,7 @@ impl MinMaxScaler {
         }
     }
 
+    /// Set the output feature range (default `(0.0, 1.0)`).
     pub fn feature_range(mut self, range: (f64, f64)) -> Self {
         self.feature_range = range;
         self
@@ -259,9 +298,22 @@ impl Transform<DataFrame> for MinMaxScaler {
     }
 }
 
-/// Scale features using statistics that are robust to outliers.
+/// Scale features using statistics robust to outliers.
 ///
-/// Corresponds to `sklearn.preprocessing.RobustScaler`.
+/// For each column `x`, computes `(x - median) / IQR` using the
+/// interquartile range, which is insensitive to outliers.
+///
+/// # Example
+///
+/// ```rust
+/// use featrs::preprocessing::scaler::RobustScaler;
+/// use featrs::traits::{Fit, Transform};
+///
+/// let mut scaler = RobustScaler::new().with_centering(true);
+/// # let df = polars::prelude::DataFrame::new(0usize, vec![]).unwrap();
+/// // scaler.fit(df.clone(), target)?;
+/// // let scaled = scaler.transform(df)?;
+/// ```
 pub struct RobustScaler {
     fitted: bool,
     params: Option<Vec<RobustParam>>,
@@ -276,6 +328,7 @@ struct RobustParam {
 }
 
 impl RobustScaler {
+    /// Create a new `RobustScaler` with centering and scaling enabled.
     pub fn new() -> Self {
         Self {
             fitted: false,
@@ -285,11 +338,13 @@ impl RobustScaler {
         }
     }
 
+    /// Whether to center by subtracting the median (default: `true`).
     pub fn with_centering(mut self, value: bool) -> Self {
         self.with_centering = value;
         self
     }
 
+    /// Whether to scale by the IQR (default: `true`).
     pub fn with_scaling(mut self, value: bool) -> Self {
         self.with_scaling = value;
         self
@@ -446,7 +501,6 @@ mod tests {
             .iter()
             .flatten()
             .collect();
-        // median=3, IQR=2, so (1-3)/2=-1, (3-3)/2=0, (5-3)/2=1
         assert_relative_eq!(vals[0], -1.0, epsilon = 1e-6);
         assert_relative_eq!(vals[1], 0.0, epsilon = 1e-6);
         assert_relative_eq!(vals[2], 1.0, epsilon = 1e-6);

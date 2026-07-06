@@ -1,19 +1,41 @@
+//! Missing value imputation.
+//!
+//! [`SimpleImputer`] replaces missing (`None` / `null`) values with
+//! a statistic computed from the non-missing values in each column.
+
 use crate::traits::{Error, Fit, Result, Transform};
 use polars::prelude::*;
 use std::collections::HashMap;
 
-/// Imputation strategy.
+/// Strategy for computing imputation values.
 #[derive(Clone, Copy)]
 pub enum Strategy {
+    /// Replace missing values with the column mean.
     Mean,
+    /// Replace missing values with the column median.
     Median,
+    /// Replace missing values with the most frequent value in the column.
     MostFrequent,
+    /// Replace missing values with a constant value.
     Constant(f64),
 }
 
 /// Impute missing values using basic statistics.
 ///
-/// Corresponds to `sklearn.preprocessing.SimpleImputer`.
+/// Only operates on [`Float64`](DataType::Float64) columns.
+///
+/// # Example
+///
+/// ```rust
+/// use featrs::preprocessing::imputer::SimpleImputer;
+/// use featrs::preprocessing::imputer::Strategy;
+/// use featrs::traits::{Fit, Transform};
+///
+/// let mut imp = SimpleImputer::mean();
+/// # let df = polars::prelude::DataFrame::new(0usize, vec![]).unwrap();
+/// // imp.fit(df.clone(), target)?;
+/// // let filled = imp.transform(df)?;
+/// ```
 pub struct SimpleImputer {
     fitted: bool,
     strategy: Strategy,
@@ -21,6 +43,7 @@ pub struct SimpleImputer {
 }
 
 impl SimpleImputer {
+    /// Create a new `SimpleImputer` with the given strategy.
     pub fn new(strategy: Strategy) -> Self {
         Self {
             fitted: false,
@@ -29,18 +52,22 @@ impl SimpleImputer {
         }
     }
 
+    /// Impute using the column mean.
     pub fn mean() -> Self {
         Self::new(Strategy::Mean)
     }
 
+    /// Impute using the column median.
     pub fn median() -> Self {
         Self::new(Strategy::Median)
     }
 
+    /// Impute using the most frequent (mode) value.
     pub fn most_frequent() -> Self {
         Self::new(Strategy::MostFrequent)
     }
 
+    /// Impute with a constant value.
     pub fn constant(value: f64) -> Self {
         Self::new(Strategy::Constant(value))
     }
@@ -168,7 +195,7 @@ mod tests {
             .iter()
             .flatten()
             .collect();
-        assert_relative_eq!(x_vals[1], 2.0, epsilon = 1e-6); // (1+3)/2
+        assert_relative_eq!(x_vals[1], 2.0, epsilon = 1e-6);
 
         let y_vals: Vec<f64> = result
             .column("y")
@@ -178,7 +205,7 @@ mod tests {
             .iter()
             .flatten()
             .collect();
-        assert_relative_eq!(y_vals[2], 15.0, epsilon = 1e-6); // (10+20)/2
+        assert_relative_eq!(y_vals[2], 15.0, epsilon = 1e-6);
     }
 
     #[test]

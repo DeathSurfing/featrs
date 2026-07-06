@@ -1,9 +1,23 @@
+//! Variance-based feature selection.
+//!
+//! [`VarianceThreshold`] removes features whose variance does not meet
+//! a threshold, i.e. features that are constant or nearly constant.
+
 use crate::traits::{Error, Fit, Result, Transform};
 use polars::prelude::*;
 
 /// Remove features with variance below a threshold.
 ///
-/// Corresponds to `sklearn.feature_selection.VarianceThreshold`.
+/// Features with variance below `threshold` are removed. By default (threshold `0.0`),
+/// only constant features are removed.
+///
+/// # Example
+///
+/// ```rust
+/// use featrs::feature_selection::VarianceThreshold;
+///
+/// let mut vt = VarianceThreshold::new(0.01);
+/// ```
 pub struct VarianceThreshold {
     fitted: bool,
     threshold: f64,
@@ -11,6 +25,10 @@ pub struct VarianceThreshold {
 }
 
 impl VarianceThreshold {
+    /// Create a new `VarianceThreshold` transformer.
+    ///
+    /// Features with variance strictly less than `threshold` are dropped.
+    /// Use `0.0` (default) to remove only constant features.
     pub fn new(threshold: f64) -> Self {
         Self {
             fitted: false,

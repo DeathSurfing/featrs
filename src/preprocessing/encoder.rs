@@ -1,3 +1,10 @@
+//! Categorical encoding.
+//!
+//! Analogous to `sklearn.preprocessing`. Provides:
+//! - [`OneHotEncoder`] — create dummy/binary columns for each category
+//! - [`LabelEncoder`] — encode labels as `0..n_classes-1` integers
+//! - [`OrdinalEncoder`] — encode categorical features as integer columns
+
 use crate::traits::{Error, Fit, Result, Transform};
 use polars::prelude::*;
 use std::collections::HashMap;
@@ -20,7 +27,20 @@ fn column_unique_strings(col: &Column) -> Result<Vec<String>> {
 
 /// Encode categorical features as a one-hot numeric array.
 ///
-/// Corresponds to `sklearn.preprocessing.OneHotEncoder`.
+/// Creates a binary column for each category value. Non-string columns
+/// are ignored.
+///
+/// # Example
+///
+/// ```rust
+/// use featrs::preprocessing::encoder::OneHotEncoder;
+/// use featrs::traits::{Fit, Transform};
+///
+/// let mut enc = OneHotEncoder::new().drop_first(false);
+/// # let df = polars::prelude::DataFrame::new(0usize, vec![]).unwrap();
+/// // enc.fit(df.clone(), target)?;
+/// // let encoded = enc.transform(df)?;
+/// ```
 pub struct OneHotEncoder {
     fitted: bool,
     categories: Option<Vec<OneHotCategory>>,
@@ -33,6 +53,11 @@ struct OneHotCategory {
 }
 
 impl OneHotEncoder {
+    /// Create a new `OneHotEncoder`.
+    ///
+    /// By default, a column is created for every category. Use
+    /// [`drop_first`](Self::drop_first) to drop the first category
+    /// and avoid multicollinearity.
     pub fn new() -> Self {
         Self {
             fitted: false,
@@ -41,6 +66,10 @@ impl OneHotEncoder {
         }
     }
 
+    /// Whether to drop the first category of each feature (default: `false`).
+    ///
+    /// When `true`, the first category (alphabetically) is omitted from the
+    /// output, producing `k-1` columns for a feature with `k` categories.
     pub fn drop_first(mut self, value: bool) -> Self {
         self.drop_first = value;
         self
@@ -111,9 +140,21 @@ impl Transform<DataFrame> for OneHotEncoder {
     }
 }
 
-/// Encode categorical labels with value between 0 and n_classes-1.
+/// Encode labels as integers `0` to `n_classes - 1`.
 ///
-/// Corresponds to `sklearn.preprocessing.LabelEncoder`.
+/// Operates on a single string column. The mapping is sorted alphabetically.
+///
+/// # Example
+///
+/// ```rust
+/// use featrs::preprocessing::encoder::LabelEncoder;
+/// use featrs::traits::{Fit, Transform};
+///
+/// let mut enc = LabelEncoder::new();
+/// # let df = polars::prelude::DataFrame::new(0usize, vec![]).unwrap();
+/// // enc.fit(df.clone(), target)?;
+/// // let encoded = enc.transform(df)?;
+/// ```
 pub struct LabelEncoder {
     fitted: bool,
     classes: Option<Vec<String>>,
@@ -121,6 +162,7 @@ pub struct LabelEncoder {
 }
 
 impl LabelEncoder {
+    /// Create a new `LabelEncoder`.
     pub fn new() -> Self {
         Self {
             fitted: false,
@@ -183,15 +225,29 @@ impl Transform<DataFrame> for LabelEncoder {
     }
 }
 
-/// Encode categorical features as an integer array.
+/// Encode categorical features as integer columns.
 ///
-/// Corresponds to `sklearn.preprocessing.OrdinalEncoder`.
+/// Similar to [`LabelEncoder`] but operates on multiple columns at once.
+/// Each column receives its own `0..n_categories` mapping.
+///
+/// # Example
+///
+/// ```rust
+/// use featrs::preprocessing::encoder::OrdinalEncoder;
+/// use featrs::traits::{Fit, Transform};
+///
+/// let mut enc = OrdinalEncoder::new();
+/// # let df = polars::prelude::DataFrame::new(0usize, vec![]).unwrap();
+/// // enc.fit(df.clone(), target)?;
+/// // let encoded = enc.transform(df)?;
+/// ```
 pub struct OrdinalEncoder {
     fitted: bool,
     categories: Option<Vec<(String, HashMap<String, u32>)>>,
 }
 
 impl OrdinalEncoder {
+    /// Create a new `OrdinalEncoder`.
     pub fn new() -> Self {
         Self {
             fitted: false,

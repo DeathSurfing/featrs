@@ -1,22 +1,46 @@
+//! Row-wise normalization.
+//!
+//! [`Normalizer`] scales each row (sample) to unit norm independently.
+//! Supports L1, L2, and Max norms. Analogous to `sklearn.preprocessing.Normalizer`.
+
 use crate::traits::{Error, Fit, Result, Transform};
 use polars::prelude::*;
 
 /// Normalize samples individually to unit norm.
 ///
-/// Corresponds to `sklearn.preprocessing.Normalizer`.
+/// Each row is divided by its norm so that the row has unit length.
+/// Note: this is a **row-wise** operation, not column-wise like the scalers.
+///
+/// # Example
+///
+/// ```rust
+/// use featrs::preprocessing::normalizer::Normalizer;
+/// use featrs::preprocessing::normalizer::Norm;
+/// use featrs::traits::{Fit, Transform};
+///
+/// let mut n = Normalizer::l2();
+/// # let df = polars::prelude::DataFrame::new(0usize, vec![]).unwrap();
+/// // n.fit(df.clone(), target)?;
+/// // let normalized = n.transform(df)?;
+/// ```
 pub struct Normalizer {
     fitted: bool,
     norm: Norm,
 }
 
+/// The norm to use for normalization.
 #[derive(Clone, Copy)]
 pub enum Norm {
+    /// L1 norm — sum of absolute values.
     L1,
+    /// L2 norm — Euclidean (sqrt of sum of squares).
     L2,
+    /// Max norm — maximum absolute value.
     Max,
 }
 
 impl Normalizer {
+    /// Create a new `Normalizer` with the given norm.
     pub fn new(norm: Norm) -> Self {
         Self {
             fitted: false,
@@ -24,14 +48,17 @@ impl Normalizer {
         }
     }
 
+    /// Normalize using the L1 norm (sum of absolute values).
     pub fn l1() -> Self {
         Self::new(Norm::L1)
     }
 
+    /// Normalize using the L2 norm (Euclidean).
     pub fn l2() -> Self {
         Self::new(Norm::L2)
     }
 
+    /// Normalize using the Max norm (maximum absolute value).
     pub fn max() -> Self {
         Self::new(Norm::Max)
     }
@@ -58,7 +85,6 @@ impl Fit<DataFrame, DataFrame> for Normalizer {
         if x.width() == 0 {
             return Err(Error::InvalidInput("empty DataFrame".into()));
         }
-        // Validate all columns are f64
         for col in x.columns() {
             if col.dtype() != &DataType::Float64 {
                 return Err(Error::InvalidInput(format!(
@@ -82,18 +108,14 @@ impl Transform<DataFrame> for Normalizer {
 
         let n_cols = x.width();
         let n_rows = x.height();
-        let mut out_cols: Vec<Column> = Vec::with_capacity(n_cols);
-
-        // Extract all columns as Vec<Vec<f64>>
-        let mut col_data: Vec<Vec<f64>> = Vec::with_capacity(n_cols);
         let col_names: Vec<&str> = x.get_column_names().iter().map(|s| s.as_str()).collect();
 
+        let mut col_data: Vec<Vec<f64>> = Vec::with_capacity(n_cols);
         for name in &col_names {
             let ca = x.column(name).unwrap().f64().unwrap();
             col_data.push(ca.iter().flatten().collect());
         }
 
-        // Normalize each row
         for i in 0..n_rows {
             let row_vals: Vec<f64> = col_data.iter().map(|col| col[i]).collect();
             let norm = Self::row_norm(&row_vals, self.norm);
@@ -104,7 +126,7 @@ impl Transform<DataFrame> for Normalizer {
             }
         }
 
-        // Rebuild columns
+        let mut out_cols: Vec<Column> = Vec::with_capacity(n_cols);
         for (j, name) in col_names.iter().enumerate() {
             let new_ca: ChunkedArray<Float64Type> =
                 ChunkedArray::from_slice(name.to_string().as_str().into(), &col_data[j]);
@@ -135,13 +157,10 @@ mod tests {
         n.fit(df.clone(), y).unwrap();
         let result = n.transform(df).unwrap();
 
-        // Row 0: [3,4] -> L2 norm = 5 -> [0.6, 0.8]
         let col_a = result.column("a").unwrap().f64().unwrap();
         let col_b = result.column("b").unwrap().f64().unwrap();
         assert_relative_eq!(col_a.get(0).unwrap(), 0.6, epsilon = 1e-6);
         assert_relative_eq!(col_b.get(0).unwrap(), 0.8, epsilon = 1e-6);
-
-        // Row 1: [0,0] stays [0,0]
         assert_relative_eq!(col_a.get(1).unwrap(), 0.0, epsilon = 1e-6);
     }
 
@@ -156,7 +175,6 @@ mod tests {
 
         let col_a = result.column("a").unwrap().f64().unwrap();
         let col_b = result.column("b").unwrap().f64().unwrap();
-        // Row 0: L1 norm = 7 -> [3/7, 4/7]
         assert_relative_eq!(col_a.get(0).unwrap(), 3.0 / 7.0, epsilon = 1e-6);
         assert_relative_eq!(col_b.get(0).unwrap(), 4.0 / 7.0, epsilon = 1e-6);
     }
@@ -172,7 +190,6 @@ mod tests {
 
         let col_a = result.column("a").unwrap().f64().unwrap();
         let col_b = result.column("b").unwrap().f64().unwrap();
-        // Row 0: max = 4 -> [0.75, 1.0]
         assert_relative_eq!(col_a.get(0).unwrap(), 0.75, epsilon = 1e-6);
         assert_relative_eq!(col_b.get(0).unwrap(), 1.0, epsilon = 1e-6);
     }

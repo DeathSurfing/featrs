@@ -1,17 +1,39 @@
+//! Select top-k features using statistical tests.
+//!
+//! Provides [`SelectKBest`] and the [`FClassif`] scoring function
+//! (ANOVA F-value between each feature and the target).
+
 use crate::traits::{Error, Fit, Result, Transform};
 use polars::prelude::*;
 
-/// Scoring function for SelectKBest.
+/// Scoring function for [`SelectKBest`].
+///
+/// Implementors compute a score for each feature column indicating
+/// how relevant it is for predicting the target. Higher scores are better.
 pub trait ScoreFunction: Send + Sync {
+    /// Score each feature in `x` against the target `y`.
+    ///
+    /// Returns a list of `(column_name, score)` pairs for numeric columns.
     fn score(&self, x: &DataFrame, y: &Column) -> Result<Vec<(String, f64)>>;
 }
 
-/// ANOVA F-value between each feature and the target.
+/// ANOVA F-value scoring function.
 ///
-/// For each f64 column in X, computes F = (between-group variance) / (within-group variance).
+/// Computes the F-statistic between each feature and the target labels:
+///
+/// ```text
+/// F = (SS_between / df_between) / (SS_within / df_within)
+/// ```
+///
+/// Where `SS_between` is the between-group sum of squares and `SS_within`
+/// is the within-group sum of squares. Higher F-values indicate stronger
+/// class separation.
+///
+/// Requires the target column to be [`Float64`](DataType::Float64).
 pub struct FClassif;
 
 impl FClassif {
+    /// Create a new `FClassif` scorer.
     pub fn new() -> Self {
         Self
     }
@@ -33,7 +55,6 @@ impl ScoreFunction for FClassif {
         let n = y_vals.len() as f64;
         let y_mean = y_vals.iter().sum::<f64>() / n;
 
-        // Determine unique classes
         let mut classes: Vec<f64> = y_ca.iter().flatten().collect();
         classes.sort_by(|a, b| a.partial_cmp(b).unwrap());
         classes.dedup();
@@ -48,9 +69,7 @@ impl ScoreFunction for FClassif {
             let ca = col.f64().unwrap();
             let vals: Vec<Option<f64>> = ca.iter().collect();
 
-            // Between-group sum of squares
             let mut ss_between = 0.0;
-            // Within-group sum of squares
             let mut ss_within = 0.0;
 
             for &cls in &classes {
@@ -90,9 +109,17 @@ impl ScoreFunction for FClassif {
     }
 }
 
-/// Select top k features according to a scoring function.
+/// Select the top `k` features according to a [`ScoreFunction`].
 ///
-/// Corresponds to `sklearn.feature_selection.SelectKBest`.
+/// # Example
+///
+/// ```rust
+/// use featrs::feature_selection::SelectKBest;
+/// use featrs::feature_selection::select_kbest::FClassif;
+///
+/// // Keep the single feature with the highest F-score
+/// let mut skb = SelectKBest::new(1, Box::new(FClassif::new()));
+/// ```
 pub struct SelectKBest {
     fitted: bool,
     k: usize,
@@ -102,6 +129,10 @@ pub struct SelectKBest {
 }
 
 impl SelectKBest {
+    /// Create a new `SelectKBest` transformer.
+    ///
+    /// * `k` — number of top features to keep
+    /// * `score_fn` — scoring function (e.g. [`FClassif`])
     pub fn new(k: usize, score_fn: Box<dyn ScoreFunction>) -> Self {
         Self {
             fitted: false,
@@ -112,6 +143,9 @@ impl SelectKBest {
         }
     }
 
+    /// Returns the scores for each feature from the last `fit`.
+    ///
+    /// Returns `None` if not fitted yet. The list is sorted highest-score first.
     pub fn scores(&self) -> Option<&[(String, f64)]> {
         self.scores.as_deref()
     }
@@ -160,8 +194,6 @@ mod tests {
     use super::*;
 
     fn make_features() -> DataFrame {
-        // 6 rows, 2 classes (0 and 1), 3 samples per class
-        // noise has weak class separation, signal has strong separation
         let a = Column::from(Series::new(
             "noise".into(),
             &[1.0f64, 2.0, 3.0, 4.0, 5.0, 6.0],
