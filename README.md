@@ -2,7 +2,7 @@
 
 [![Crates.io](https://img.shields.io/crates/v/featrs)](https://crates.io/crates/featrs)
 [![Docs.rs](https://img.shields.io/docsrs/featrs)](https://docs.rs/featrs)
-[![CI](https://github.com/anomalyco/featrs/actions/workflows/ci.yml/badge.svg)](https://github.com/anomalyco/featrs/actions/workflows/ci.yml)
+[![CI](https://github.com/DeathSurfing/featrs/actions/workflows/ci.yml/badge.svg)](https://github.com/DeathSurfing/featrs/actions/workflows/ci.yml)
 [![GitHub Stars](https://img.shields.io/github/stars/DeathSurfing/featrs?style=social)](https://github.com/DeathSurfing/featrs)
 [![MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
