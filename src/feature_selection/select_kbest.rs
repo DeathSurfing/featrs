@@ -86,7 +86,14 @@ impl ScoreFunction for FClassif {
             if col.dtype() != &DataType::Float64 {
                 continue;
             }
-            let ca = col.f64().unwrap();
+            let ca = col.f64().map_err(|e| {
+                Error::InvalidInput(format!(
+                    "FClassif: column '{}' has dtype {}; expected Float64. {}",
+                    name,
+                    col.dtype(),
+                    e
+                ))
+            })?;
             let vals: Vec<Option<f64>> = ca.iter().collect();
 
             let mut ss_between = 0.0;
@@ -221,7 +228,13 @@ impl Transform<DataFrame> for SelectKBest {
                     .into(),
             ));
         }
-        let cols = self.selected_columns.as_ref().unwrap();
+        let cols = self.selected_columns.as_ref().ok_or_else(|| {
+            Error::NotFitted(
+                "SelectKBest has not been fitted. \
+                 Call .fit(dataframe, target) before .transform()."
+                    .into(),
+            )
+        })?;
         if cols.is_empty() {
             // Should not happen if fit succeeded, but handle gracefully
             return Err(Error::Computation(

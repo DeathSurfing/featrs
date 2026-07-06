@@ -135,7 +135,12 @@ impl Transform<DataFrame> for RollingAggregator {
         for col in &self.columns {
             let s = out
                 .column(col.as_str())
-                .unwrap()
+                .map_err(|e| {
+                    Error::InvalidInput(format!(
+                        "RollingAggregator.transform: column '{}' not found. {}",
+                        col, e
+                    ))
+                })?
                 .as_materialized_series()
                 .clone();
             let fn_name = match self.function {

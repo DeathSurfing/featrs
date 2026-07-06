@@ -157,7 +157,13 @@ impl Transform<DataFrame> for StandardScaler {
             ));
         }
 
-        let params = self.params.as_ref().unwrap();
+        let params = self.params.as_ref().ok_or_else(|| {
+            Error::NotFitted(
+                "StandardScaler has not been fitted. \
+                 Call .fit(dataframe, target) before .transform()."
+                    .into(),
+            )
+        })?;
         let mut out = x.clone();
 
         for p in params {
@@ -237,8 +243,20 @@ impl Fit<DataFrame, DataFrame> for MinMaxScaler {
         let mut params = Vec::new();
 
         for name in &col_names {
-            let s = x.column(name.as_str()).unwrap();
-            let ca = s.f64().unwrap();
+            let s = x.column(name.as_str()).map_err(|e| {
+                Error::InvalidInput(format!(
+                    "MinMaxScaler.fit: column '{}' not found. {}",
+                    name, e
+                ))
+            })?;
+            let ca = s.f64().map_err(|e| {
+                Error::InvalidInput(format!(
+                    "MinMaxScaler.fit: column '{}' has dtype {}; expected Float64. {}",
+                    name,
+                    s.dtype(),
+                    e
+                ))
+            })?;
             let vals: Vec<f64> = ca.iter().flatten().collect();
             let col_min = vals.iter().cloned().fold(f64::NAN, f64::min);
             let col_max = vals.iter().cloned().fold(f64::NAN, f64::max);
@@ -280,7 +298,13 @@ impl Transform<DataFrame> for MinMaxScaler {
         let r_min = self.feature_range.0;
         let mut out = x.clone();
 
-        for p in self.params.as_ref().unwrap() {
+        for p in self.params.as_ref().ok_or_else(|| {
+            Error::NotFitted(
+                "MinMaxScaler has not been fitted. \
+                 Call .fit(dataframe, target) before .transform()."
+                    .into(),
+            )
+        })? {
             let min = p.min;
             let scale = p.scale;
             replace_f64_column(&mut out, &p.name, "MinMaxScaler", |v| {
@@ -382,8 +406,20 @@ impl Fit<DataFrame, DataFrame> for RobustScaler {
         let mut params = Vec::new();
 
         for name in &col_names {
-            let s = x.column(name.as_str()).unwrap();
-            let ca = s.f64().unwrap();
+            let s = x.column(name.as_str()).map_err(|e| {
+                Error::InvalidInput(format!(
+                    "RobustScaler.fit: column '{}' not found. {}",
+                    name, e
+                ))
+            })?;
+            let ca = s.f64().map_err(|e| {
+                Error::InvalidInput(format!(
+                    "RobustScaler.fit: column '{}' has dtype {}; expected Float64. {}",
+                    name,
+                    s.dtype(),
+                    e
+                ))
+            })?;
             let mut vals: Vec<f64> = ca.iter().flatten().collect();
             vals.sort_by(|a, b| a.total_cmp(b));
 
@@ -426,7 +462,13 @@ impl Transform<DataFrame> for RobustScaler {
         }
         let mut out = x.clone();
 
-        for p in self.params.as_ref().unwrap() {
+        for p in self.params.as_ref().ok_or_else(|| {
+            Error::NotFitted(
+                "RobustScaler has not been fitted. \
+                 Call .fit(dataframe, target) before .transform()."
+                    .into(),
+            )
+        })? {
             let center = p.center;
             let scale = p.scale;
             replace_f64_column(&mut out, &p.name, "RobustScaler", |v| (v - center) / scale)?;

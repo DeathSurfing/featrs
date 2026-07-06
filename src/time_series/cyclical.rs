@@ -80,9 +80,20 @@ impl Transform<DataFrame> for CyclicalEncoder {
         let two_pi = 2.0 * std::f64::consts::PI;
 
         for (col, period) in &self.columns {
-            let s = out.column(col.as_str()).unwrap().clone();
-            let ca = s.f64().map_err(|_| {
-                Error::InvalidInput(format!("CyclicalEncoder: column '{}' must be f64.", col))
+            let s = out.column(col.as_str()).map_err(|e| {
+                Error::InvalidInput(format!(
+                    "CyclicalEncoder.transform: column '{}' not found. {}",
+                    col, e
+                ))
+            })?;
+            let s = s.clone();
+            let ca = s.f64().map_err(|e| {
+                Error::InvalidInput(format!(
+                    "CyclicalEncoder.transform: column '{}' has dtype {}; expected Float64. {}",
+                    col,
+                    s.dtype(),
+                    e
+                ))
             })?;
 
             let sin_vals: ChunkedArray<Float64Type> = ca

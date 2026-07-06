@@ -139,7 +139,13 @@ impl Transform<DataFrame> for OneHotEncoder {
                     .into(),
             ));
         }
-        let cats = self.categories.as_ref().unwrap();
+        let cats = self.categories.as_ref().ok_or_else(|| {
+            Error::NotFitted(
+                "OneHotEncoder has not been fitted. \
+                 Call .fit(dataframe, target) before .transform()."
+                    .into(),
+            )
+        })?;
         let mut new_cols: Vec<Column> = Vec::new();
         let n_rows = x.height();
 
@@ -265,7 +271,13 @@ impl Transform<DataFrame> for LabelEncoder {
                     .into(),
             ));
         }
-        let mapping = self.mapping.as_ref().unwrap();
+        let mapping = self.mapping.as_ref().ok_or_else(|| {
+            Error::NotFitted(
+                "LabelEncoder has not been fitted. \
+                 Call .fit(dataframe, target) before .transform()."
+                    .into(),
+            )
+        })?;
         let s = x.columns()[0].as_materialized_series();
         let ca = s.str().map_err(|e| {
             Error::InvalidInput(format!(
@@ -382,18 +394,21 @@ impl Transform<DataFrame> for OrdinalEncoder {
         }
         let mut out_cols = Vec::new();
 
-        for (name, mapping) in self.categories.as_ref().unwrap() {
+        let cats = self.categories.as_ref().ok_or_else(|| {
+            Error::NotFitted(
+                "OrdinalEncoder has not been fitted. \
+                 Call .fit(dataframe, target) before .transform()."
+                    .into(),
+            )
+        })?;
+
+        for (name, mapping) in cats {
             let s = x.column(name.as_str()).map_err(|e| {
                 Error::InvalidInput(format!(
                     "OrdinalEncoder.transform: column '{}' not found. \
                      The encoder was fitted on columns: {:?}. {}",
                     name,
-                    self.categories
-                        .as_ref()
-                        .unwrap()
-                        .iter()
-                        .map(|(n, _)| n)
-                        .collect::<Vec<_>>(),
+                    cats.iter().map(|(n, _)| n).collect::<Vec<_>>(),
                     e
                 ))
             })?;

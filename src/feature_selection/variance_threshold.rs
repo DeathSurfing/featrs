@@ -66,11 +66,23 @@ impl Fit<DataFrame, DataFrame> for VarianceThreshold {
         let mut selected = Vec::new();
         for col in x.columns() {
             let name = col.name().to_string();
-            let s = x.column(&name).unwrap();
+            let s = x.column(&name).map_err(|e| {
+                Error::InvalidInput(format!(
+                    "VarianceThreshold.fit: column '{}' not found. {}",
+                    name, e
+                ))
+            })?;
             if s.dtype() != &DataType::Float64 {
                 continue;
             }
-            let ca = s.f64().unwrap();
+            let ca = s.f64().map_err(|e| {
+                Error::InvalidInput(format!(
+                    "VarianceThreshold.fit: column '{}' has dtype {}; expected Float64. {}",
+                    name,
+                    s.dtype(),
+                    e
+                ))
+            })?;
             let mean = ca.mean().unwrap_or(0.0);
             let var =
                 ca.iter().flatten().map(|v| (v - mean).powi(2)).sum::<f64>() / ca.len() as f64;
@@ -107,7 +119,13 @@ impl Transform<DataFrame> for VarianceThreshold {
                     .into(),
             ));
         }
-        let cols = self.selected_columns.as_ref().unwrap();
+        let cols = self.selected_columns.as_ref().ok_or_else(|| {
+            Error::NotFitted(
+                "VarianceThreshold has not been fitted. \
+                 Call .fit(dataframe, target) before .transform()."
+                    .into(),
+            )
+        })?;
         let refs: Vec<&str> = cols.iter().map(|s| s.as_str()).collect();
         x.select(refs)
             .map_err(|e| Error::Computation(e.to_string()))

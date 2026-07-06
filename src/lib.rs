@@ -26,9 +26,10 @@
 
 #![forbid(unsafe_code)]
 #![warn(missing_docs)]
-// Tracked for removal in Phase 5: production `unwrap()`/`expect()` calls are
-// replaced with `Result`-based errors, after which this is flipped to deny.
-#![allow(clippy::unwrap_used, clippy::expect_used)]
+// Production code must not `unwrap()`/`expect()` Polars results — route every
+// failure through `Error` instead. Tests are exempt.
+#![deny(clippy::unwrap_used, clippy::expect_used)]
+#![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used))]
 
 pub mod feature_selection;
 pub mod pipeline;
