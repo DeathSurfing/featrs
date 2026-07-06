@@ -1,0 +1,141 @@
+//! Cyclical encoding.
+//!
+//! [`CyclicalEncoder`] maps cyclical features (hour, day-of-week, month)
+//! to `sin` and `cos` components so that `23:00` and `01:00` are close
+//! in the encoded space.
+
+use crate::traits::{Error, Fit, Result, Transform};
+use polars::prelude::*;
+
+/// Encode cyclical features with sin/cos transformation.
+///
+/// For each column, computes `sin(2π * x / period)` and
+/// `cos(2π * x / period)`, preserving the cyclic relationship.
+///
+/// # Example
+///
+/// ```rust
+/// use featrs::time_series::cyclical::CyclicalEncoder;
+/// use featrs::traits::{Fit, Transform};
+///
+/// let mut enc = CyclicalEncoder::new(&["hour"], 24);
+/// # let df = polars::prelude::DataFrame::new(0usize, vec![]).unwrap();
+/// // enc.fit(df.clone(), target)?;
+/// // let encoded = enc.transform(df)?;
+/// ```
+pub struct CyclicalEncoder {
+    fitted: bool,
+    columns: Vec<(String, f64)>,
+}
+
+impl CyclicalEncoder {
+    pub fn new(columns: &[&str], period: usize) -> Self {
+        let period_f = period as f64;
+        Self {
+            fitted: false,
+            columns: columns.iter().map(|s| (s.to_string(), period_f)).collect(),
+        }
+    }
+
+    pub fn with_periods(columns: &[(&str, usize)]) -> Self {
+        Self {
+            fitted: false,
+            columns: columns
+                .iter()
+                .map(|(s, p)| (s.to_string(), *p as f64))
+                .collect(),
+        }
+    }
+}
+
+impl Fit<DataFrame, DataFrame> for CyclicalEncoder {
+    type Output = ();
+
+    fn fit(&mut self, x: DataFrame, _y: DataFrame) -> Result<()> {
+        for (col, _) in &self.columns {
+            if x.column(col.as_str()).is_err() {
+                return Err(Error::InvalidInput(format!(
+                    "CyclicalEncoder: column '{}' not found.",
+                    col
+                )));
+            }
+        }
+        self.fitted = true;
+        Ok(())
+    }
+}
+
+impl Transform<DataFrame> for CyclicalEncoder {
+    type Output = DataFrame;
+
+    fn transform(&self, x: DataFrame) -> Result<DataFrame> {
+        if !self.fitted {
+            return Err(Error::NotFitted("CyclicalEncoder".into()));
+        }
+        let mut out = x.clone();
+        let two_pi = 2.0 * std::f64::consts::PI;
+
+        for (col, period) in &self.columns {
+            let s = out.column(col.as_str()).unwrap().clone();
+            let ca = s.f64().map_err(|_| {
+                Error::InvalidInput(format!("CyclicalEncoder: column '{}' must be f64.", col))
+            })?;
+
+            let sin_vals: ChunkedArray<Float64Type> = ca
+                .iter()
+                .map(|opt| opt.map(|v| (two_pi * v / period).sin()))
+                .collect();
+            let cos_vals: ChunkedArray<Float64Type> = ca
+                .iter()
+                .map(|opt| opt.map(|v| (two_pi * v / period).cos()))
+                .collect();
+
+            let sin_name = format!("{}_sin", col);
+            let cos_name = format!("{}_cos", col);
+            out.with_column(
+                sin_vals
+                    .into_series()
+                    .with_name(sin_name.as_str().into())
+                    .into(),
+            )
+            .map_err(|e| Error::Computation(e.to_string()))?;
+            out.with_column(
+                cos_vals
+                    .into_series()
+                    .with_name(cos_name.as_str().into())
+                    .into(),
+            )
+            .map_err(|e| Error::Computation(e.to_string()))?;
+        }
+
+        Ok(out)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use approx::assert_relative_eq;
+
+    #[test]
+    fn test_cyclical_encoding() {
+        let vals = Column::from(Series::new("hour".into(), &[0.0f64, 6.0, 12.0, 18.0]));
+        let df = DataFrame::new(4, vec![vals]).unwrap();
+        let mut enc = CyclicalEncoder::new(&["hour"], 24);
+        let y = df.clone();
+
+        enc.fit(df.clone(), y).unwrap();
+        let result = enc.transform(df).unwrap();
+
+        assert_eq!(result.width(), 3); // hour, hour_sin, hour_cos
+        let sin = result.column("hour_sin").unwrap().f64().unwrap();
+        let cos = result.column("hour_cos").unwrap().f64().unwrap();
+
+        // hour 0: sin=0, cos=1
+        assert_relative_eq!(sin.get(0).unwrap(), 0.0, epsilon = 1e-6);
+        assert_relative_eq!(cos.get(0).unwrap(), 1.0, epsilon = 1e-6);
+        // hour 6 (90°): sin=1, cos=0
+        assert_relative_eq!(sin.get(1).unwrap(), 1.0, epsilon = 1e-6);
+        assert_relative_eq!(cos.get(1).unwrap(), 0.0, epsilon = 1e-6);
+    }
+}

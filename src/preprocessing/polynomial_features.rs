@@ -76,6 +76,23 @@ impl PolynomialFeatures {
         }
     }
 
+    /// Create a builder for more ergonomic configuration.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use featrs::preprocessing::polynomial_features::PolynomialFeatures;
+    ///
+    /// let pf = PolynomialFeatures::builder()
+    ///     .degree(3)
+    ///     .include_bias(false)
+    ///     .interaction_only(true)
+    ///     .build();
+    /// ```
+    pub fn builder() -> PolynomialFeaturesBuilder {
+        PolynomialFeaturesBuilder::default()
+    }
+
     /// Whether to include only interaction features (`a·b`, `a·b·c`, ...)
     /// and exclude pure powers (`a²`, `a³`, ...). Default: `false`.
     pub fn interaction_only(mut self, value: bool) -> Self {
@@ -160,6 +177,59 @@ impl PolynomialFeatures {
         }
 
         result
+    }
+}
+
+/// Builder for [`PolynomialFeatures`].
+///
+/// Provides a more ergonomic way to configure polynomial feature generation.
+#[derive(Default)]
+pub struct PolynomialFeaturesBuilder {
+    degree: Option<usize>,
+    interaction_only: bool,
+    include_bias: bool,
+}
+
+impl PolynomialFeaturesBuilder {
+    /// Set the maximum degree of polynomial features. Required.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `degree` is `0`.
+    pub fn degree(mut self, degree: usize) -> Self {
+        assert!(degree >= 1, "degree must be >= 1, got {degree}");
+        self.degree = Some(degree);
+        self
+    }
+
+    /// Only include interaction terms (exclude pure powers). Default: `false`.
+    pub fn interaction_only(mut self, value: bool) -> Self {
+        self.interaction_only = value;
+        self
+    }
+
+    /// Include a bias (intercept) column. Default: `true`.
+    pub fn include_bias(mut self, value: bool) -> Self {
+        self.include_bias = value;
+        self
+    }
+
+    /// Build the `PolynomialFeatures` instance.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `degree` was not set.
+    pub fn build(self) -> PolynomialFeatures {
+        let degree = self.degree.expect(
+            "PolynomialFeaturesBuilder: degree is required. Call .degree(n) before .build().",
+        );
+        PolynomialFeatures {
+            fitted: false,
+            degree,
+            interaction_only: self.interaction_only,
+            include_bias: self.include_bias,
+            input_columns: None,
+        }
     }
 }
 

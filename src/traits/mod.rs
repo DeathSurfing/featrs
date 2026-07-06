@@ -14,6 +14,8 @@
 //! - [`Error::NotFitted`] — `transform` called before `fit`
 //! - [`Error::Computation`] — numerical issues (zero variance, singular matrices, etc.)
 
+pub mod missing_indicator;
+
 use thiserror::Error;
 
 /// Errors that can occur during feature engineering operations.

@@ -1,0 +1,172 @@
+//! Rolling window aggregations.
+//!
+//! [`RollingAggregator`] computes rolling mean, std, min, max, sum
+//! over a fixed window. Analogous to `df.rolling()` in pandas.
+
+use crate::traits::{Error, Fit, Result, Transform};
+use polars::prelude::*;
+
+/// Rolling window function to apply.
+#[derive(Clone, Copy)]
+pub enum RollingFn {
+    Mean,
+    Std,
+    Min,
+    Max,
+    Sum,
+}
+
+/// Compute rolling window statistics.
+///
+/// # Example
+///
+/// ```rust
+/// use featrs::time_series::rolling::{RollingAggregator, RollingFn};
+/// use featrs::traits::{Fit, Transform};
+///
+/// let mut r = RollingAggregator::new(&["value"], 7, RollingFn::Mean);
+/// # let df = polars::prelude::DataFrame::new(0usize, vec![]).unwrap();
+/// // r.fit(df.clone(), target)?;
+/// // let rolled = r.transform(df)?;
+/// ```
+pub struct RollingAggregator {
+    fitted: bool,
+    columns: Vec<String>,
+    window_size: usize,
+    function: RollingFn,
+}
+
+impl RollingAggregator {
+    pub fn new(columns: &[&str], window_size: usize, function: RollingFn) -> Self {
+        Self {
+            fitted: false,
+            columns: columns.iter().map(|s| s.to_string()).collect(),
+            window_size,
+            function,
+        }
+    }
+
+    fn rolling_series(&self, s: &Series) -> Result<Series> {
+        let ca = s
+            .f64()
+            .map_err(|_| Error::InvalidInput("column must be f64".into()))?;
+        let vals: Vec<f64> = ca.iter().flatten().collect();
+        let n = vals.len();
+        let w = self.window_size;
+
+        let result: Vec<Option<f64>> = (0..n)
+            .map(|i| {
+                if i < w - 1 {
+                    None
+                } else {
+                    let start = i + 1 - w;
+                    let window = &vals[start..=i];
+                    match self.function {
+                        RollingFn::Mean => Some(window.iter().sum::<f64>() / w as f64),
+                        RollingFn::Sum => Some(window.iter().sum()),
+                        RollingFn::Min => {
+                            window.iter().cloned().fold(f64::INFINITY, f64::min).into()
+                        }
+                        RollingFn::Max => window
+                            .iter()
+                            .cloned()
+                            .fold(f64::NEG_INFINITY, f64::max)
+                            .into(),
+                        RollingFn::Std => {
+                            let mean = window.iter().sum::<f64>() / w as f64;
+                            let var =
+                                window.iter().map(|v| (v - mean).powi(2)).sum::<f64>() / w as f64;
+                            Some(var.sqrt())
+                        }
+                    }
+                }
+            })
+            .collect();
+
+        let new_ca: ChunkedArray<Float64Type> = result.into_iter().collect();
+        Ok(new_ca.into_series())
+    }
+}
+
+impl Fit<DataFrame, DataFrame> for RollingAggregator {
+    type Output = ();
+
+    fn fit(&mut self, x: DataFrame, _y: DataFrame) -> Result<()> {
+        if self.columns.is_empty() {
+            return Err(Error::InvalidInput(
+                "RollingAggregator: at least one column is required.".into(),
+            ));
+        }
+        if self.window_size < 2 {
+            return Err(Error::InvalidInput(format!(
+                "RollingAggregator: window_size must be >= 2, got {}",
+                self.window_size
+            )));
+        }
+        for col in &self.columns {
+            if x.column(col.as_str()).is_err() {
+                return Err(Error::InvalidInput(format!(
+                    "RollingAggregator: column '{}' not found.",
+                    col
+                )));
+            }
+        }
+        self.fitted = true;
+        Ok(())
+    }
+}
+
+impl Transform<DataFrame> for RollingAggregator {
+    type Output = DataFrame;
+
+    fn transform(&self, x: DataFrame) -> Result<DataFrame> {
+        if !self.fitted {
+            return Err(Error::NotFitted("RollingAggregator".into()));
+        }
+        let mut out = x.clone();
+
+        for col in &self.columns {
+            let s = out
+                .column(col.as_str())
+                .unwrap()
+                .as_materialized_series()
+                .clone();
+            let fn_name = match self.function {
+                RollingFn::Mean => "mean",
+                RollingFn::Std => "std",
+                RollingFn::Min => "min",
+                RollingFn::Max => "max",
+                RollingFn::Sum => "sum",
+            };
+            let rolled = self.rolling_series(&s)?;
+            let rolled_name = format!("{}_{}_{}", col, fn_name, self.window_size);
+            out.with_column(rolled.with_name(rolled_name.as_str().into()).into())
+                .map_err(|e| Error::Computation(e.to_string()))?;
+        }
+
+        Ok(out)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use approx::assert_relative_eq;
+
+    #[test]
+    fn test_rolling_mean() {
+        let vals = Column::from(Series::new("x".into(), &[1.0f64, 2.0, 3.0, 4.0, 5.0]));
+        let df = DataFrame::new(5, vec![vals]).unwrap();
+        let mut r = RollingAggregator::new(&["x"], 3, RollingFn::Mean);
+        let y = df.clone();
+
+        r.fit(df.clone(), y).unwrap();
+        let result = r.transform(df).unwrap();
+
+        assert_eq!(result.width(), 2);
+        let rolled = result.column("x_mean_3").unwrap().f64().unwrap();
+        assert!(rolled.get(0).is_none());
+        assert!(rolled.get(1).is_none());
+        assert_relative_eq!(rolled.get(2).unwrap(), 2.0, epsilon = 1e-6);
+    }
+}

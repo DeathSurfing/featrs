@@ -21,8 +21,7 @@ featrs = "0.1"
 
 ```rust
 use polars::prelude::*;
-use featrs::preprocessing::scaler::StandardScaler;
-use featrs::traits::{Fit, Transform};
+use featrs::prelude::*;
 
 let mut scaler = StandardScaler::new();
 scaler.fit(data.clone(), target)?;
@@ -47,6 +46,13 @@ let scaled = scaler.transform(data)?;
 | `ColumnTransformer` | Apply different transformers to different columns |
 | `VarianceThreshold` | Remove low-variance features |
 | `SelectKBest` | Select top-k features by statistical test (ANOVA F) |
+| `FeatureHasher` | Hash string features into a fixed number of buckets |
+| `AutoTypeDetector` | Auto-detect column types and apply default transforms |
+| `MissingIndicator` | Add binary columns marking missing values |
+| `Lagger` | Create lag features for time-series forecasting |
+| `RollingAggregator` | Rolling window mean, std, min, max, sum |
+| `Difference` | Differencing and percentage change |
+| `CyclicalEncoder` | Sin/cos encoding for cyclical features (hour, month, etc.) |
 
 ## Examples
 
@@ -110,11 +116,15 @@ let selected = skb.transform(features)?;
 ```rust
 use featrs::preprocessing::polynomial_features::PolynomialFeatures;
 
-let mut pf = PolynomialFeatures::new(3)
-    .include_bias(true)
-    .interaction_only(false);
-pf.fit(df.clone(), target)?;
-let result = pf.transform(df)?;
+// Builder pattern (recommended)
+let pf = PolynomialFeatures::builder()
+    .degree(3)
+    .include_bias(false)
+    .interaction_only(true)
+    .build();
+
+// Or direct construction
+let pf = PolynomialFeatures::new(2).include_bias(true);
 ```
 
 ## Resources

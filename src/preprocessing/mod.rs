@@ -4,8 +4,10 @@
 //! that implements [`Fit`](crate::traits::Fit) and [`Transform`](crate::traits::Transform)
 //! and operates on [`DataFrame`](polars::prelude::DataFrame).
 
+pub mod auto_type;
 pub mod binarizer;
 pub mod encoder;
+pub mod feature_hasher;
 pub mod imputer;
 pub mod normalizer;
 pub mod polynomial_features;
