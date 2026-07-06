@@ -301,4 +301,69 @@ mod tests {
         imp.fit(df.clone()).unwrap();
         let _ = imp.transform(df).unwrap();
     }
+
+    #[test]
+    fn test_imputer_median_value() {
+        // Non-null values [1.0, 3.0] → median = 2.0; the null at index 2 is
+        // imputed with 2.0.
+        let x = Column::from(Series::new("x".into(), &[Some(1.0f64), Some(3.0), None]));
+        let df = DataFrame::new(3, vec![x]).unwrap();
+        let mut imp = SimpleImputer::median();
+        imp.fit(df.clone()).unwrap();
+        let result = imp.transform(df).unwrap();
+
+        let vals: Vec<f64> = result
+            .column("x")
+            .unwrap()
+            .f64()
+            .unwrap()
+            .iter()
+            .flatten()
+            .collect();
+        assert_relative_eq!(vals[2], 2.0, epsilon = 1e-6);
+    }
+
+    #[test]
+    fn test_imputer_most_frequent_value() {
+        // Non-null values [1.0, 2.0, 2.0] → mode = 2.0; the null is imputed
+        // with 2.0.
+        let x = Column::from(Series::new(
+            "x".into(),
+            &[Some(1.0f64), Some(2.0), Some(2.0), None],
+        ));
+        let df = DataFrame::new(4, vec![x]).unwrap();
+        let mut imp = SimpleImputer::most_frequent();
+        imp.fit(df.clone()).unwrap();
+        let result = imp.transform(df).unwrap();
+
+        let vals: Vec<f64> = result
+            .column("x")
+            .unwrap()
+            .f64()
+            .unwrap()
+            .iter()
+            .flatten()
+            .collect();
+        assert_relative_eq!(vals[3], 2.0, epsilon = 1e-6);
+    }
+
+    #[test]
+    fn test_imputer_all_null_column_error() {
+        let x = Column::from(Series::new("x".into(), &[None::<f64>, None, None]));
+        let df = DataFrame::new(3, vec![x]).unwrap();
+        let mut imp = SimpleImputer::mean();
+        let fit_result = imp.fit(df.clone());
+        assert!(
+            fit_result.is_err(),
+            "fitting an all-null column with Mean must error"
+        );
+    }
+
+    #[test]
+    fn test_imputer_not_fitted() {
+        let imp = SimpleImputer::mean();
+        let x = Column::from(Series::new("x".into(), &[Some(1.0f64), None]));
+        let df = DataFrame::new(2, vec![x]).unwrap();
+        assert!(imp.transform(df).is_err());
+    }
 }

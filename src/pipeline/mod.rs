@@ -131,6 +131,7 @@ impl Transform<DataFrame> for Pipeline {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::preprocessing::binarizer::Binarizer;
     use crate::preprocessing::scaler::StandardScaler;
 
     fn make_test_df() -> DataFrame {
@@ -150,5 +151,37 @@ mod tests {
 
         assert_eq!(result.width(), 2);
         assert_eq!(result.height(), 3);
+    }
+
+    #[test]
+    fn test_pipeline_multi_step() {
+        let scaler = StandardScaler::new();
+        let binarizer = Binarizer::new(0.0);
+        let mut pipeline = Pipeline::new(vec![
+            ("scaler".into(), Box::new(scaler)),
+            ("binarizer".into(), Box::new(binarizer)),
+        ])
+        .unwrap();
+        let df = make_test_df();
+
+        pipeline.fit(df.clone()).unwrap();
+        let result = pipeline.transform(df).unwrap();
+
+        assert_eq!(result.width(), 2);
+        assert_eq!(result.height(), 3);
+    }
+
+    #[test]
+    fn test_pipeline_empty_steps_error() {
+        let result = Pipeline::new(vec![]);
+        assert!(result.is_err(), "Pipeline::new must reject empty steps");
+    }
+
+    #[test]
+    fn test_pipeline_not_fitted() {
+        let scaler = StandardScaler::new();
+        let pipeline = Pipeline::new(vec![("scaler".into(), Box::new(scaler))]).unwrap();
+        let df = make_test_df();
+        assert!(pipeline.transform(df).is_err());
     }
 }

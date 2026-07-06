@@ -207,4 +207,50 @@ mod tests {
         let result = ct.transform(df).unwrap();
         assert_eq!(result.width(), 3);
     }
+
+    #[test]
+    fn test_column_transformer_drop_remainder() {
+        let scaler = StandardScaler::new();
+        let mut ct = ColumnTransformer::new(
+            vec![("scale_a".into(), Box::new(scaler), vec!["a".into()])],
+            Remainder::Drop,
+        );
+        let df = make_test_df();
+
+        ct.fit(df.clone()).unwrap();
+        let result = ct.transform(df).unwrap();
+        // Only the transformed "a" column is kept; b and c are dropped.
+        assert_eq!(result.width(), 1);
+        assert_eq!(result.height(), 3);
+    }
+
+    #[test]
+    fn test_column_transformer_multiple() {
+        let scaler_a = StandardScaler::new();
+        let scaler_b = StandardScaler::new();
+        let mut ct = ColumnTransformer::new(
+            vec![
+                ("scale_a".into(), Box::new(scaler_a), vec!["a".into()]),
+                ("scale_b".into(), Box::new(scaler_b), vec!["b".into()]),
+            ],
+            Remainder::Passthrough,
+        );
+        let df = make_test_df();
+
+        ct.fit(df.clone()).unwrap();
+        let result = ct.transform(df).unwrap();
+        // a (scaled) + b (scaled) + c (passthrough) = 3 columns.
+        assert_eq!(result.width(), 3);
+    }
+
+    #[test]
+    fn test_column_transformer_not_fitted() {
+        let scaler = StandardScaler::new();
+        let ct = ColumnTransformer::new(
+            vec![("scale_a".into(), Box::new(scaler), vec!["a".into()])],
+            Remainder::Passthrough,
+        );
+        let df = make_test_df();
+        assert!(ct.transform(df).is_err());
+    }
 }
