@@ -60,7 +60,7 @@ impl ScoreFunction for FClassif {
         let y_mean = y_vals.iter().sum::<f64>() / n;
 
         let mut classes: Vec<f64> = y_ca.iter().flatten().collect();
-        classes.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        classes.sort_by(|a, b| a.total_cmp(b));
         classes.dedup();
 
         if classes.len() < 2 {
@@ -198,7 +198,7 @@ impl Fit<DataFrame, DataFrame> for SelectKBest {
             ));
         }
 
-        scores.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap());
+        scores.sort_by(|a, b| b.1.total_cmp(&a.1));
 
         let k = self.k.min(scores.len());
         let selected: Vec<String> = scores.iter().take(k).map(|(n, _)| n.clone()).collect();

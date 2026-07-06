@@ -9,10 +9,15 @@ use polars::prelude::*;
 /// Rolling window function to apply.
 #[derive(Clone, Copy)]
 pub enum RollingFn {
+    /// Rolling mean over the window.
     Mean,
+    /// Rolling (sample) standard deviation over the window.
     Std,
+    /// Rolling minimum over the window.
     Min,
+    /// Rolling maximum over the window.
     Max,
+    /// Rolling sum over the window.
     Sum,
 }
 
@@ -37,6 +42,8 @@ pub struct RollingAggregator {
 }
 
 impl RollingAggregator {
+    /// Create a new rolling aggregator for `columns` over a `window_size`-row
+    /// window, applying `function` (e.g. [`RollingFn::Mean`]).
     pub fn new(columns: &[&str], window_size: usize, function: RollingFn) -> Self {
         Self {
             fitted: false,

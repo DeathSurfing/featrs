@@ -8,23 +8,7 @@
 use polars::prelude::*;
 
 use crate::traits::{Error, Fit, Result, Transform};
-
-fn numeric_f64_columns(df: &DataFrame) -> Vec<String> {
-    df.get_column_names()
-        .iter()
-        .filter_map(|name| {
-            if let Ok(s) = df.column(name) {
-                if s.dtype() == &DataType::Float64 {
-                    Some(name.to_string())
-                } else {
-                    None
-                }
-            } else {
-                None
-            }
-        })
-        .collect()
-}
+use crate::util::{replace_f64_column, require_f64_columns};
 
 /// Standardize features by removing the mean and scaling to unit variance.
 ///
@@ -100,21 +84,7 @@ impl Fit<DataFrame, DataFrame> for StandardScaler {
             ));
         }
 
-        let col_names = numeric_f64_columns(&x);
-        if col_names.is_empty() {
-            let all_types: Vec<String> = x
-                .get_column_names()
-                .iter()
-                .filter_map(|n| x.column(n).ok().map(|c| format!("'{}' ({})", n, c.dtype())))
-                .collect();
-            return Err(Error::InvalidInput(format!(
-                "StandardScaler: no Float64 columns found. \
-                 This transformer only operates on f64 columns. \
-                 Available columns: [{}]. \
-                 Try casting non-f64 columns before scaling.",
-                all_types.join(", ")
-            )));
-        }
+        let col_names = require_f64_columns(&x, "StandardScaler")?;
 
         let mut params = Vec::with_capacity(col_names.len());
 
@@ -191,34 +161,9 @@ impl Transform<DataFrame> for StandardScaler {
         let mut out = x.clone();
 
         for p in params {
-            let s = out.column(&p.name).map_err(|e| {
-                Error::InvalidInput(format!(
-                    "StandardScaler.transform: column '{}' not found in input. \
-                     The scaler was fitted on columns {:?}. {}",
-                    p.name,
-                    params.iter().map(|p| &p.name).collect::<Vec<_>>(),
-                    e
-                ))
-            })?;
-
-            let ca = s.f64().map_err(|e| {
-                Error::InvalidInput(format!(
-                    "StandardScaler.transform: column '{}' has dtype {}; expected Float64. {}",
-                    p.name,
-                    s.dtype(),
-                    e
-                ))
-            })?;
-
-            let scaled: ChunkedArray<Float64Type> = ca
-                .iter()
-                .map(|opt_v| opt_v.map(|v| (v - p.mean) / p.std))
-                .collect();
-
-            out.replace(&p.name, scaled.into_series().into())
-                .map_err(|e| {
-                    Error::Computation(format!("failed to replace column '{}': {}", p.name, e))
-                })?;
+            let mean = p.mean;
+            let std = p.std;
+            replace_f64_column(&mut out, &p.name, "StandardScaler", |v| (v - mean) / std)?;
         }
 
         Ok(out)
@@ -286,19 +231,7 @@ impl Fit<DataFrame, DataFrame> for MinMaxScaler {
                     .into(),
             ));
         }
-        let col_names = numeric_f64_columns(&x);
-        if col_names.is_empty() {
-            let all_types: Vec<String> = x
-                .get_column_names()
-                .iter()
-                .filter_map(|n| x.column(n).ok().map(|c| format!("'{}' ({})", n, c.dtype())))
-                .collect();
-            return Err(Error::InvalidInput(format!(
-                "MinMaxScaler: no Float64 columns found. \
-                 Available columns: [{}]. Cast non-f64 columns first.",
-                all_types.join(", ")
-            )));
-        }
+        let col_names = require_f64_columns(&x, "MinMaxScaler")?;
         let r_min = self.feature_range.0;
         let r_max = self.feature_range.1;
         let mut params = Vec::new();
@@ -348,13 +281,11 @@ impl Transform<DataFrame> for MinMaxScaler {
         let mut out = x.clone();
 
         for p in self.params.as_ref().unwrap() {
-            let s = out.column(&p.name).unwrap();
-            let ca = s.f64().unwrap();
-            let scaled: ChunkedArray<Float64Type> = ca
-                .iter()
-                .map(|opt| opt.map(|v| (v - p.min) * p.scale + r_min))
-                .collect();
-            out.replace(&p.name, scaled.into_series().into()).unwrap();
+            let min = p.min;
+            let scale = p.scale;
+            replace_f64_column(&mut out, &p.name, "MinMaxScaler", |v| {
+                (v - min) * scale + r_min
+            })?;
         }
 
         Ok(out)
@@ -447,26 +378,14 @@ impl Fit<DataFrame, DataFrame> for RobustScaler {
                     .into(),
             ));
         }
-        let col_names = numeric_f64_columns(&x);
-        if col_names.is_empty() {
-            let all_types: Vec<String> = x
-                .get_column_names()
-                .iter()
-                .filter_map(|n| x.column(n).ok().map(|c| format!("'{}' ({})", n, c.dtype())))
-                .collect();
-            return Err(Error::InvalidInput(format!(
-                "RobustScaler: no Float64 columns found. \
-                 Available columns: [{}]. Cast non-f64 columns first.",
-                all_types.join(", ")
-            )));
-        }
+        let col_names = require_f64_columns(&x, "RobustScaler")?;
         let mut params = Vec::new();
 
         for name in &col_names {
             let s = x.column(name.as_str()).unwrap();
             let ca = s.f64().unwrap();
             let mut vals: Vec<f64> = ca.iter().flatten().collect();
-            vals.sort_by(|a, b| a.partial_cmp(b).unwrap());
+            vals.sort_by(|a, b| a.total_cmp(b));
 
             let median = percentile_sorted(&vals, 50.0);
             let q1 = percentile_sorted(&vals, 25.0);
@@ -508,13 +427,9 @@ impl Transform<DataFrame> for RobustScaler {
         let mut out = x.clone();
 
         for p in self.params.as_ref().unwrap() {
-            let s = out.column(&p.name).unwrap();
-            let ca = s.f64().unwrap();
-            let scaled: ChunkedArray<Float64Type> = ca
-                .iter()
-                .map(|opt| opt.map(|v| (v - p.center) / p.scale))
-                .collect();
-            out.replace(&p.name, scaled.into_series().into()).unwrap();
+            let center = p.center;
+            let scale = p.scale;
+            replace_f64_column(&mut out, &p.name, "RobustScaler", |v| (v - center) / scale)?;
         }
 
         Ok(out)
@@ -599,5 +514,17 @@ mod tests {
         let df = make_test_df();
         let result = scaler.transform(df);
         assert!(result.is_err());
+    }
+
+    /// Regression: `partial_cmp().unwrap()` panicked when a column contained NaN.
+    /// `total_cmp` sorts NaN deterministically without panicking.
+    #[test]
+    fn test_robust_scaler_with_nan_does_not_panic() {
+        let a = Column::from(Series::new("a".into(), &[1.0f64, f64::NAN, 5.0, 3.0]));
+        let df = DataFrame::new(4, vec![a]).unwrap();
+        let mut scaler = RobustScaler::new();
+        // fit must not panic on the NaN-bearing sort.
+        scaler.fit(df.clone(), df.clone()).unwrap();
+        let _ = scaler.transform(df).unwrap();
     }
 }

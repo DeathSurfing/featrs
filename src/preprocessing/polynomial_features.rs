@@ -5,6 +5,7 @@
 //! `sklearn.preprocessing.PolynomialFeatures`.
 
 use crate::traits::{Error, Fit, Result, Transform};
+use crate::util::require_f64_columns;
 use polars::prelude::*;
 
 fn series_pow(s: &Series, exp: usize) -> Series {
@@ -104,23 +105,6 @@ impl PolynomialFeatures {
     pub fn include_bias(mut self, value: bool) -> Self {
         self.include_bias = value;
         self
-    }
-
-    fn numeric_f64_column_names(&self, df: &DataFrame) -> Vec<String> {
-        df.get_column_names()
-            .iter()
-            .filter_map(|name| {
-                if let Ok(s) = df.column(name) {
-                    if s.dtype() == &DataType::Float64 {
-                        Some(name.to_string())
-                    } else {
-                        None
-                    }
-                } else {
-                    None
-                }
-            })
-            .collect()
     }
 
     fn generate_powers(
@@ -248,19 +232,7 @@ impl Fit<DataFrame, DataFrame> for PolynomialFeatures {
                 "PolynomialFeatures.fit received an empty DataFrame (0 rows or 0 columns).".into(),
             ));
         }
-        let col_names = self.numeric_f64_column_names(&x);
-        if col_names.is_empty() {
-            let all_types: Vec<String> = x
-                .get_column_names()
-                .iter()
-                .filter_map(|n| x.column(n).ok().map(|c| format!("'{}' ({})", n, c.dtype())))
-                .collect();
-            return Err(Error::InvalidInput(format!(
-                "PolynomialFeatures.fit: no Float64 columns found. \
-                 Available columns: [{}]. PolynomialFeatures operates on f64 columns.",
-                all_types.join(", ")
-            )));
-        }
+        let col_names = require_f64_columns(&x, "PolynomialFeatures")?;
         self.input_columns = Some(col_names);
         self.fitted = true;
         Ok(())

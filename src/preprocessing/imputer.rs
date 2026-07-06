@@ -113,7 +113,7 @@ impl Fit<DataFrame, DataFrame> for SimpleImputer {
                 }
                 Strategy::Median => {
                     let mut sorted = all_vals.clone();
-                    sorted.sort_by(|a, b| a.partial_cmp(b).unwrap());
+                    sorted.sort_by(|a, b| a.total_cmp(b));
                     if sorted.is_empty() {
                         return Err(Error::Computation(format!(
                             "SimpleImputer(Median): column '{}' has no non-null values. \
@@ -258,5 +258,21 @@ mod tests {
             .flatten()
             .collect();
         assert_relative_eq!(x_vals[1], 0.0, epsilon = 1e-6);
+    }
+
+    /// Regression: the Median path sorted with `partial_cmp().unwrap()`, which
+    /// panicked when a NaN was present. `total_cmp` sorts NaN deterministically.
+    #[test]
+    fn test_imputer_median_with_nan_does_not_panic() {
+        // Column `x` has a NaN among the non-null values; the median sort must
+        // not panic.
+        let x = Column::from(Series::new(
+            "x".into(),
+            &[Some(1.0f64), Some(f64::NAN), None, Some(3.0)],
+        ));
+        let df = DataFrame::new(4, vec![x]).unwrap();
+        let mut imp = SimpleImputer::median();
+        imp.fit(df.clone(), df.clone()).unwrap();
+        let _ = imp.transform(df).unwrap();
     }
 }
