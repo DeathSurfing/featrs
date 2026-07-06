@@ -2,7 +2,7 @@
 //!
 //! [`ColumnTransformer`] applies different preprocessing pipelines to
 //! different column subsets and combines the results into a single
-//! [`DataFrame`](polars::prelude::DataFrame).
+//! [`DataFrame`].
 
 use crate::pipeline::DataFrameTransformer;
 use crate::traits::{Error, Fit, Result, Transform};

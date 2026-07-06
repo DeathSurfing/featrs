@@ -8,8 +8,8 @@
 //!
 //! # Errors
 //!
-//! All fallible operations return [`Result<T>`], which wraps [`Error`].
-//! [`Error`] has three variants:
+//! All fallible operations return [`Result<T>`], which wraps [`enum@Error`].
+//! [`enum@Error`] has three variants:
 //! - [`Error::InvalidInput`] — wrong dimensions, types, or empty data
 //! - [`Error::NotFitted`] — `transform` called before `fit`
 //! - [`Error::Computation`] — numerical issues (zero variance, singular matrices, etc.)
