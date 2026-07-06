@@ -10,18 +10,22 @@ Built on [Polars](https://pola.rs) — works natively with DataFrames.
 
 | Component | Status |
 |---|---|
+| Component | Status |
+|---|---|---|
 | `StandardScaler` | ✅ |
-| `MinMaxScaler` | 🏗️ Stub |
-| `RobustScaler` | 🏗️ Stub |
-| `Normalizer` | 🏗️ Stub |
-| `OneHotEncoder` | 🏗️ Stub |
-| `LabelEncoder` | 🏗️ Stub |
-| `OrdinalEncoder` | 🏗️ Stub |
-| `Binarizer` | 🏗️ Stub |
-| `SimpleImputer` | 🏗️ Stub |
-| **`PolynomialFeatures`** | ✅ |
-| **`Pipeline`** | ✅ |
-| **`ColumnTransformer`** | ✅ |
+| `MinMaxScaler` | ✅ |
+| `RobustScaler` | ✅ |
+| `Normalizer` | ✅ |
+| `OneHotEncoder` | ✅ |
+| `LabelEncoder` | ✅ |
+| `OrdinalEncoder` | ✅ |
+| `Binarizer` | ✅ |
+| `SimpleImputer` | ✅ |
+| `PolynomialFeatures` | ✅ |
+| `Pipeline` | ✅ |
+| `ColumnTransformer` | ✅ |
+| `VarianceThreshold` | ✅ |
+| `SelectKBest` | ✅ |
 
 ## Usage
 
@@ -67,6 +71,24 @@ let ct = ColumnTransformer::new(
     vec![("scale".into(), Box::new(StandardScaler::new()), vec!["feat_a".into()])],
     Remainder::Passthrough,
 );
+```
+
+### Feature Selection
+
+```rust
+use featrs::feature_selection::VarianceThreshold;
+use featrs::feature_selection::SelectKBest;
+use featrs::feature_selection::select_kbest::FClassif;
+
+// Remove constant / low-variance features
+let mut vt = VarianceThreshold::new(0.01);
+vt.fit(features.clone(), target.clone())?;
+let filtered = vt.transform(features)?;
+
+// Select top k features by ANOVA F-value
+let mut skb = SelectKBest::new(5, Box::new(FClassif::new()));
+skb.fit(features.clone(), target)?;
+let selected = skb.transform(features)?;
 ```
 
 ### PolynomialFeatures

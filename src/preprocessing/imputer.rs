@@ -1,3 +1,7 @@
+use crate::traits::{Error, Fit, Result, Transform};
+use polars::prelude::*;
+use std::collections::HashMap;
+
 /// Imputation strategy.
 #[derive(Clone, Copy)]
 pub enum Strategy {
@@ -10,11 +14,10 @@ pub enum Strategy {
 /// Impute missing values using basic statistics.
 ///
 /// Corresponds to `sklearn.preprocessing.SimpleImputer`.
-#[allow(dead_code)]
 pub struct SimpleImputer {
     fitted: bool,
     strategy: Strategy,
-    fill_values: Option<Vec<f64>>,
+    fill_values: Option<HashMap<String, f64>>,
 }
 
 impl SimpleImputer {
@@ -43,19 +46,158 @@ impl SimpleImputer {
     }
 }
 
+impl Fit<DataFrame, DataFrame> for SimpleImputer {
+    type Output = ();
+
+    fn fit(&mut self, x: DataFrame, _y: DataFrame) -> Result<()> {
+        let mut fill_values = HashMap::new();
+
+        for col in x.columns() {
+            let name = col.name().to_string();
+            if col.dtype() != &DataType::Float64 {
+                continue;
+            }
+            let ca = col.f64().unwrap();
+            let all_vals: Vec<f64> = ca.iter().flatten().collect();
+            let has_missing = ca.iter().any(|v| v.is_none());
+
+            if !has_missing {
+                continue;
+            }
+
+            let fill = match self.strategy {
+                Strategy::Mean => {
+                    if all_vals.is_empty() {
+                        return Err(Error::Computation(format!(
+                            "column '{}' has no non-null values",
+                            name
+                        )));
+                    }
+                    all_vals.iter().sum::<f64>() / all_vals.len() as f64
+                }
+                Strategy::Median => {
+                    let mut sorted = all_vals.clone();
+                    sorted.sort_by(|a, b| a.partial_cmp(b).unwrap());
+                    if sorted.is_empty() {
+                        return Err(Error::Computation(format!(
+                            "column '{}' has no non-null values",
+                            name
+                        )));
+                    }
+                    let mid = sorted.len() / 2;
+                    if sorted.len().is_multiple_of(2) {
+                        (sorted[mid - 1] + sorted[mid]) / 2.0
+                    } else {
+                        sorted[mid]
+                    }
+                }
+                Strategy::MostFrequent => {
+                    if all_vals.is_empty() {
+                        return Err(Error::Computation(format!(
+                            "column '{}' has no non-null values",
+                            name
+                        )));
+                    }
+                    let mut freq: HashMap<u64, usize> = HashMap::new();
+                    for &v in &all_vals {
+                        *freq.entry(v.to_bits()).or_default() += 1;
+                    }
+                    let (max_key, _) = freq.into_iter().max_by_key(|&(_, c)| c).unwrap();
+                    f64::from_bits(max_key)
+                }
+                Strategy::Constant(v) => v,
+            };
+
+            fill_values.insert(name, fill);
+        }
+
+        self.fill_values = Some(fill_values);
+        self.fitted = true;
+        Ok(())
+    }
+}
+
+impl Transform<DataFrame> for SimpleImputer {
+    type Output = DataFrame;
+
+    fn transform(&self, x: DataFrame) -> Result<DataFrame> {
+        if !self.fitted {
+            return Err(Error::NotFitted("SimpleImputer".into()));
+        }
+        let fill_values = self.fill_values.as_ref().unwrap();
+        let mut out = x.clone();
+
+        for (name, fill) in fill_values {
+            let s = out.column(name.as_str()).unwrap();
+            let ca = s.f64().unwrap();
+            let filled: ChunkedArray<Float64Type> =
+                ca.iter().map(|opt| opt.or(Some(*fill))).collect();
+            out.replace(name.as_str(), filled.into_series().into())
+                .unwrap();
+        }
+
+        Ok(out)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use approx::assert_relative_eq;
 
-    #[test]
-    fn test_simple_imputer_new() {
-        let imp = SimpleImputer::mean();
-        assert!(matches!(imp.strategy, Strategy::Mean));
+    fn make_test_df() -> DataFrame {
+        let a = Column::from(Series::new("x".into(), &[Some(1.0f64), None, Some(3.0)]));
+        let b = Column::from(Series::new("y".into(), &[Some(10.0f64), Some(20.0), None]));
+        DataFrame::new(3, vec![a, b]).unwrap()
     }
 
     #[test]
-    fn test_simple_imputer_constant() {
-        let imp = SimpleImputer::constant(0.0);
-        assert!(matches!(imp.strategy, Strategy::Constant(v) if v == 0.0));
+    fn test_imputer_mean() {
+        let mut imp = SimpleImputer::mean();
+        let df = make_test_df();
+        let y = df.clone();
+
+        imp.fit(df.clone(), y).unwrap();
+        let result = imp.transform(df).unwrap();
+
+        let x_vals: Vec<f64> = result
+            .column("x")
+            .unwrap()
+            .f64()
+            .unwrap()
+            .iter()
+            .flatten()
+            .collect();
+        assert_relative_eq!(x_vals[1], 2.0, epsilon = 1e-6); // (1+3)/2
+
+        let y_vals: Vec<f64> = result
+            .column("y")
+            .unwrap()
+            .f64()
+            .unwrap()
+            .iter()
+            .flatten()
+            .collect();
+        assert_relative_eq!(y_vals[2], 15.0, epsilon = 1e-6); // (10+20)/2
+    }
+
+    #[test]
+    fn test_imputer_constant() {
+        let mut imp = SimpleImputer::constant(0.0);
+        let df = make_test_df();
+        let y = df.clone();
+
+        imp.fit(df.clone(), y).unwrap();
+        let result = imp.transform(df).unwrap();
+
+        let x_vals: Vec<f64> = result
+            .column("x")
+            .unwrap()
+            .f64()
+            .unwrap()
+            .iter()
+            .flatten()
+            .collect();
+        assert_relative_eq!(x_vals[1], 0.0, epsilon = 1e-6);
     }
 }

@@ -1,19 +1,35 @@
 use polars::prelude::*;
-use std::collections::HashMap;
 
 use crate::traits::{Error, Fit, Result, Transform};
+
+fn numeric_f64_columns(df: &DataFrame) -> Vec<String> {
+    df.get_column_names()
+        .iter()
+        .filter_map(|name| {
+            if let Ok(s) = df.column(name) {
+                if s.dtype() == &DataType::Float64 {
+                    Some(name.to_string())
+                } else {
+                    None
+                }
+            } else {
+                None
+            }
+        })
+        .collect()
+}
 
 /// Standardize features by removing the mean and scaling to unit variance.
 ///
 /// Corresponds to `sklearn.preprocessing.StandardScaler`.
 pub struct StandardScaler {
     fitted: bool,
-    params: Option<Vec<ScalerParam>>,
+    params: Option<Vec<ScaleParam>>,
     with_mean: bool,
     with_std: bool,
 }
 
-struct ScalerParam {
+struct ScaleParam {
     name: String,
     mean: f64,
     std: f64,
@@ -38,23 +54,6 @@ impl StandardScaler {
         self.with_std = value;
         self
     }
-
-    fn numeric_f64_columns(&self, df: &DataFrame) -> Vec<String> {
-        df.get_column_names()
-            .iter()
-            .filter_map(|name| {
-                if let Ok(s) = df.column(name) {
-                    if s.dtype() == &DataType::Float64 {
-                        Some(name.to_string())
-                    } else {
-                        None
-                    }
-                } else {
-                    None
-                }
-            })
-            .collect()
-    }
 }
 
 impl Default for StandardScaler {
@@ -66,12 +65,12 @@ impl Default for StandardScaler {
 impl Fit<DataFrame, DataFrame> for StandardScaler {
     type Output = ();
 
-    fn fit(&mut self, x: DataFrame, _y: DataFrame) -> Result<Self::Output> {
+    fn fit(&mut self, x: DataFrame, _y: DataFrame) -> Result<()> {
         if x.height() == 0 || x.width() == 0 {
             return Err(Error::InvalidInput("data cannot be empty".into()));
         }
 
-        let col_names = self.numeric_f64_columns(&x);
+        let col_names = numeric_f64_columns(&x);
         if col_names.is_empty() {
             return Err(Error::InvalidInput(
                 "no f64 columns found in DataFrame".into(),
@@ -80,7 +79,7 @@ impl Fit<DataFrame, DataFrame> for StandardScaler {
 
         let mut params = Vec::with_capacity(col_names.len());
 
-        for name in col_names {
+        for name in &col_names {
             let s = x
                 .column(name.as_str())
                 .map_err(|e| Error::InvalidInput(format!("column '{}' not found: {}", name, e)))?;
@@ -114,7 +113,7 @@ impl Fit<DataFrame, DataFrame> for StandardScaler {
                 )));
             }
 
-            params.push(ScalerParam {
+            params.push(ScaleParam {
                 name: name.clone(),
                 mean: col_mean,
                 std: col_std,
@@ -153,30 +152,36 @@ impl Transform<DataFrame> for StandardScaler {
                 .map(|opt_v| opt_v.map(|v| (v - p.mean) / p.std))
                 .collect();
 
-            let new_s = scaled.into_series();
-            out.replace(&p.name, new_s.into()).map_err(|e| {
-                Error::Computation(format!("failed to replace column '{}': {}", p.name, e))
-            })?;
+            out.replace(&p.name, scaled.into_series().into())
+                .map_err(|e| {
+                    Error::Computation(format!("failed to replace column '{}': {}", p.name, e))
+                })?;
         }
 
         Ok(out)
     }
 }
 
-#[allow(dead_code)]
+/// Scale features to a given range (default [0, 1]).
+///
+/// Corresponds to `sklearn.preprocessing.MinMaxScaler`.
 pub struct MinMaxScaler {
     fitted: bool,
-    min: Option<HashMap<String, f64>>,
-    scale: Option<HashMap<String, f64>>,
+    params: Option<Vec<MinMaxParam>>,
     feature_range: (f64, f64),
+}
+
+struct MinMaxParam {
+    name: String,
+    min: f64,
+    scale: f64,
 }
 
 impl MinMaxScaler {
     pub fn new() -> Self {
         Self {
             fitted: false,
-            min: None,
-            scale: None,
+            params: None,
             feature_range: (0.0, 1.0),
         }
     }
@@ -193,25 +198,90 @@ impl Default for MinMaxScaler {
     }
 }
 
-#[allow(dead_code)]
+impl Fit<DataFrame, DataFrame> for MinMaxScaler {
+    type Output = ();
+
+    fn fit(&mut self, x: DataFrame, _y: DataFrame) -> Result<()> {
+        let col_names = numeric_f64_columns(&x);
+        let r_min = self.feature_range.0;
+        let r_max = self.feature_range.1;
+        let mut params = Vec::new();
+
+        for name in &col_names {
+            let s = x.column(name.as_str()).unwrap();
+            let ca = s.f64().unwrap();
+            let vals: Vec<f64> = ca.iter().flatten().collect();
+            let col_min = vals.iter().cloned().fold(f64::NAN, f64::min);
+            let col_max = vals.iter().cloned().fold(f64::NAN, f64::max);
+
+            if (col_max - col_min).abs() < f64::EPSILON {
+                return Err(Error::Computation(format!(
+                    "column '{}' has constant values",
+                    name
+                )));
+            }
+
+            let scale = (r_max - r_min) / (col_max - col_min);
+            params.push(MinMaxParam {
+                name: name.clone(),
+                min: col_min,
+                scale,
+            });
+        }
+
+        self.params = Some(params);
+        self.fitted = true;
+        Ok(())
+    }
+}
+
+impl Transform<DataFrame> for MinMaxScaler {
+    type Output = DataFrame;
+
+    fn transform(&self, x: DataFrame) -> Result<DataFrame> {
+        if !self.fitted {
+            return Err(Error::NotFitted("MinMaxScaler".into()));
+        }
+        let r_min = self.feature_range.0;
+        let mut out = x.clone();
+
+        for p in self.params.as_ref().unwrap() {
+            let s = out.column(&p.name).unwrap();
+            let ca = s.f64().unwrap();
+            let scaled: ChunkedArray<Float64Type> = ca
+                .iter()
+                .map(|opt| opt.map(|v| (v - p.min) * p.scale + r_min))
+                .collect();
+            out.replace(&p.name, scaled.into_series().into()).unwrap();
+        }
+
+        Ok(out)
+    }
+}
+
+/// Scale features using statistics that are robust to outliers.
+///
+/// Corresponds to `sklearn.preprocessing.RobustScaler`.
 pub struct RobustScaler {
     fitted: bool,
-    center: Option<HashMap<String, f64>>,
-    scale: Option<HashMap<String, f64>>,
+    params: Option<Vec<RobustParam>>,
     with_centering: bool,
     with_scaling: bool,
-    quantile_range: (f64, f64),
+}
+
+struct RobustParam {
+    name: String,
+    center: f64,
+    scale: f64,
 }
 
 impl RobustScaler {
     pub fn new() -> Self {
         Self {
             fitted: false,
-            center: None,
-            scale: None,
+            params: None,
             with_centering: true,
             with_scaling: true,
-            quantile_range: (25.0, 75.0),
         }
     }
 
@@ -229,6 +299,83 @@ impl RobustScaler {
 impl Default for RobustScaler {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+fn percentile_sorted(sorted: &[f64], p: f64) -> f64 {
+    let n = sorted.len();
+    if n == 0 {
+        return 0.0;
+    }
+    let idx = (p / 100.0) * (n - 1) as f64;
+    let lo = idx.floor() as usize;
+    let hi = idx.ceil() as usize;
+    if lo == hi {
+        sorted[lo]
+    } else {
+        let frac = idx - lo as f64;
+        sorted[lo] * (1.0 - frac) + sorted[hi] * frac
+    }
+}
+
+impl Fit<DataFrame, DataFrame> for RobustScaler {
+    type Output = ();
+
+    fn fit(&mut self, x: DataFrame, _y: DataFrame) -> Result<()> {
+        let col_names = numeric_f64_columns(&x);
+        let mut params = Vec::new();
+
+        for name in &col_names {
+            let s = x.column(name.as_str()).unwrap();
+            let ca = s.f64().unwrap();
+            let mut vals: Vec<f64> = ca.iter().flatten().collect();
+            vals.sort_by(|a, b| a.partial_cmp(b).unwrap());
+
+            let median = percentile_sorted(&vals, 50.0);
+            let q1 = percentile_sorted(&vals, 25.0);
+            let q3 = percentile_sorted(&vals, 75.0);
+            let iqr = q3 - q1;
+
+            if iqr < f64::EPSILON {
+                return Err(Error::Computation(format!(
+                    "column '{}' has zero IQR",
+                    name
+                )));
+            }
+
+            params.push(RobustParam {
+                name: name.clone(),
+                center: if self.with_centering { median } else { 0.0 },
+                scale: if self.with_scaling { iqr } else { 1.0 },
+            });
+        }
+
+        self.params = Some(params);
+        self.fitted = true;
+        Ok(())
+    }
+}
+
+impl Transform<DataFrame> for RobustScaler {
+    type Output = DataFrame;
+
+    fn transform(&self, x: DataFrame) -> Result<DataFrame> {
+        if !self.fitted {
+            return Err(Error::NotFitted("RobustScaler".into()));
+        }
+        let mut out = x.clone();
+
+        for p in self.params.as_ref().unwrap() {
+            let s = out.column(&p.name).unwrap();
+            let ca = s.f64().unwrap();
+            let scaled: ChunkedArray<Float64Type> = ca
+                .iter()
+                .map(|opt| opt.map(|v| (v - p.center) / p.scale))
+                .collect();
+            out.replace(&p.name, scaled.into_series().into()).unwrap();
+        }
+
+        Ok(out)
     }
 }
 
@@ -253,12 +400,56 @@ mod tests {
         let result = scaler.transform(df).unwrap();
 
         let scaled_a = result.column("a").unwrap().f64().unwrap();
-        let vals: Vec<f64> = scaled_a.iter().filter_map(|v| v).collect();
+        let vals: Vec<f64> = scaled_a.iter().flatten().collect();
 
-        assert_eq!(vals.len(), 3);
         assert_relative_eq!(vals[0], -1.22474487, epsilon = 1e-6);
         assert_relative_eq!(vals[1], 0.0, epsilon = 1e-6);
         assert_relative_eq!(vals[2], 1.22474487, epsilon = 1e-6);
+    }
+
+    #[test]
+    fn test_min_max_scaler() {
+        let mut scaler = MinMaxScaler::new();
+        let df = make_test_df();
+        let y = df.clone();
+
+        scaler.fit(df.clone(), y).unwrap();
+        let result = scaler.transform(df).unwrap();
+
+        let vals: Vec<f64> = result
+            .column("a")
+            .unwrap()
+            .f64()
+            .unwrap()
+            .iter()
+            .flatten()
+            .collect();
+        assert_relative_eq!(vals[0], 0.0, epsilon = 1e-6);
+        assert_relative_eq!(vals[1], 0.5, epsilon = 1e-6);
+        assert_relative_eq!(vals[2], 1.0, epsilon = 1e-6);
+    }
+
+    #[test]
+    fn test_robust_scaler() {
+        let mut scaler = RobustScaler::new();
+        let df = make_test_df();
+        let y = df.clone();
+
+        scaler.fit(df.clone(), y).unwrap();
+        let result = scaler.transform(df).unwrap();
+
+        let vals: Vec<f64> = result
+            .column("a")
+            .unwrap()
+            .f64()
+            .unwrap()
+            .iter()
+            .flatten()
+            .collect();
+        // median=3, IQR=2, so (1-3)/2=-1, (3-3)/2=0, (5-3)/2=1
+        assert_relative_eq!(vals[0], -1.0, epsilon = 1e-6);
+        assert_relative_eq!(vals[1], 0.0, epsilon = 1e-6);
+        assert_relative_eq!(vals[2], 1.0, epsilon = 1e-6);
     }
 
     #[test]
@@ -267,18 +458,5 @@ mod tests {
         let df = make_test_df();
         let result = scaler.transform(df);
         assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_min_max_scaler_new() {
-        let s = MinMaxScaler::new();
-        assert_eq!(s.feature_range, (0.0, 1.0));
-    }
-
-    #[test]
-    fn test_robust_scaler_new() {
-        let s = RobustScaler::new();
-        assert!(s.with_centering);
-        assert!(s.with_scaling);
     }
 }
