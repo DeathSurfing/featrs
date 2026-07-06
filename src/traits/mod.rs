@@ -52,12 +52,18 @@ pub type Result<T> = std::result::Result<T, Error>;
 /// # Example
 ///
 /// ```rust
-/// use featrs::traits::Fit;
-/// # use featrs::traits::Result;
-/// # use polars::prelude::*;
+/// use featrs::preprocessing::scaler::StandardScaler;
+/// use featrs::traits::{Fit, Transform};
+/// use polars::prelude::{Column, DataFrame, NamedFrom, Series};
 ///
-/// // Unsupervised transformers implement Fit. The fitted parameters are
-/// // stored on the transformer itself.
+/// let col = Column::from(Series::new("x".into(), &[1.0_f64, 2.0, 3.0]));
+/// let df = DataFrame::new(3, vec![col])?;
+///
+/// let mut scaler = StandardScaler::new();
+/// scaler.fit(df.clone())?;
+/// let scaled = scaler.transform(df)?;
+/// assert_eq!(scaled.height(), 3);
+/// # Ok::<(), Box<dyn std::error::Error>>(())
 /// ```
 pub trait Fit<X> {
     /// The type returned by `fit`. Usually `()`.
@@ -97,10 +103,18 @@ pub trait FitSupervised<X, Y> {
 /// # Example
 ///
 /// ```rust
-/// use featrs::traits::Transform;
-/// # use polars::prelude::*;
+/// use featrs::preprocessing::scaler::StandardScaler;
+/// use featrs::traits::{Fit, Transform};
+/// use polars::prelude::{Column, DataFrame, NamedFrom, Series};
 ///
-/// // After fitting, call transform to apply the transformation.
+/// let col = Column::from(Series::new("x".into(), &[1.0_f64, 2.0, 3.0]));
+/// let df = DataFrame::new(3, vec![col])?;
+///
+/// let mut scaler = StandardScaler::new();
+/// scaler.fit(df.clone())?;
+/// let scaled = scaler.transform(df)?;
+/// assert_eq!(scaled.width(), 1);
+/// # Ok::<(), Box<dyn std::error::Error>>(())
 /// ```
 pub trait Transform<X> {
     /// The type of the transformed output.

@@ -37,11 +37,19 @@ impl<T> DataFrameTransformer for T where
 /// ```rust
 /// use featrs::pipeline::Pipeline;
 /// use featrs::preprocessing::scaler::StandardScaler;
+/// use featrs::traits::{Fit, Transform};
+/// use polars::prelude::{Column, DataFrame, NamedFrom, Series};
+///
+/// let col = Column::from(Series::new("x".into(), &[1.0_f64, 2.0, 3.0]));
+/// let df = DataFrame::new(3, vec![col])?;
 ///
 /// let mut pipeline = Pipeline::new(vec![
 ///     ("scale".into(), Box::new(StandardScaler::new())),
-/// ]).unwrap();
-/// # let _ = pipeline;
+/// ])?;
+/// pipeline.fit(df.clone())?;
+/// let result = pipeline.transform(df)?;
+/// assert_eq!(result.height(), 3);
+/// # Ok::<(), Box<dyn std::error::Error>>(())
 /// ```
 pub struct Pipeline {
     steps: Vec<(String, Box<dyn DataFrameTransformer>)>,

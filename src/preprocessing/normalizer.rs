@@ -15,13 +15,18 @@ use polars::prelude::*;
 ///
 /// ```rust
 /// use featrs::preprocessing::normalizer::Normalizer;
-/// use featrs::preprocessing::normalizer::Norm;
 /// use featrs::traits::{Fit, Transform};
+/// use polars::prelude::{Column, DataFrame, NamedFrom, Series};
+///
+/// let a = Column::from(Series::new("a".into(), &[3.0_f64, 0.0, 1.0]));
+/// let b = Column::from(Series::new("b".into(), &[4.0_f64, 0.0, 2.0]));
+/// let df = DataFrame::new(3, vec![a, b])?;
 ///
 /// let mut n = Normalizer::l2();
-/// # let df = polars::prelude::DataFrame::new(0usize, vec![]).unwrap();
-/// // n.fit(df.clone(), target)?;
-/// // let normalized = n.transform(df)?;
+/// n.fit(df.clone())?;
+/// let normalized = n.transform(df)?;
+/// assert_eq!(normalized.height(), 3);
+/// # Ok::<(), Box<dyn std::error::Error>>(())
 /// ```
 pub struct Normalizer {
     fitted: bool,

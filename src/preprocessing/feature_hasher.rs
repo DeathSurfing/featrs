@@ -24,11 +24,16 @@ use std::hash::{Hash, Hasher};
 /// ```rust
 /// use featrs::preprocessing::feature_hasher::FeatureHasher;
 /// use featrs::traits::{Fit, Transform};
+/// use polars::prelude::{Column, DataFrame, NamedFrom, Series};
 ///
-/// let mut fh = FeatureHasher::new(&["text", "category"], 100);
-/// # let df = polars::prelude::DataFrame::new(0usize, vec![]).unwrap();
-/// // fh.fit(df.clone())?;
-/// // let hashed = fh.transform(df)?;
+/// let col = Column::from(Series::new("color".into(), &["red", "blue", "red"]));
+/// let df = DataFrame::new(3, vec![col])?;
+///
+/// let mut fh = FeatureHasher::new(&["color"], 10);
+/// fh.fit(df.clone())?;
+/// let hashed = fh.transform(df)?;
+/// assert_eq!(hashed.width(), 10);
+/// # Ok::<(), Box<dyn std::error::Error>>(())
 /// ```
 pub struct FeatureHasher {
     fitted: bool,

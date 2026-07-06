@@ -29,10 +29,11 @@ pub enum Remainder {
 /// use featrs::pipeline::column_transformer::Remainder;
 /// use featrs::preprocessing::scaler::StandardScaler;
 ///
-/// let ct = ColumnTransformer::new(
+/// let _ct = ColumnTransformer::new(
 ///     vec![("scale".into(), Box::new(StandardScaler::new()), vec!["feat_a".into()])],
 ///     Remainder::Passthrough,
 /// );
+/// # Ok::<(), Box<dyn std::error::Error>>(())
 /// ```
 pub struct ColumnTransformer {
     transformers: Vec<(String, Box<dyn DataFrameTransformer>, Vec<String>)>,

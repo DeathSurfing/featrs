@@ -17,11 +17,16 @@ use polars::prelude::*;
 /// ```rust
 /// use featrs::time_series::cyclical::CyclicalEncoder;
 /// use featrs::traits::{Fit, Transform};
+/// use polars::prelude::{Column, DataFrame, NamedFrom, Series};
+///
+/// let col = Column::from(Series::new("hour".into(), &[0.0_f64, 6.0, 12.0, 18.0]));
+/// let df = DataFrame::new(4, vec![col])?;
 ///
 /// let mut enc = CyclicalEncoder::new(&["hour"], 24);
-/// # let df = polars::prelude::DataFrame::new(0usize, vec![]).unwrap();
-/// // enc.fit(df.clone(), target)?;
-/// // let encoded = enc.transform(df)?;
+/// enc.fit(df.clone())?;
+/// let encoded = enc.transform(df)?;
+/// assert_eq!(encoded.height(), 4);
+/// # Ok::<(), Box<dyn std::error::Error>>(())
 /// ```
 pub struct CyclicalEncoder {
     fitted: bool,

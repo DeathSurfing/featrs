@@ -33,11 +33,17 @@ pub enum ColumnType {
 /// ```rust
 /// use featrs::preprocessing::auto_type::AutoTypeDetector;
 /// use featrs::traits::{Fit, Transform};
+/// use polars::prelude::{Column, DataFrame, NamedFrom, Series};
+///
+/// let num = Column::from(Series::new("num".into(), &[1.0_f64, 2.0, 3.0]));
+/// let cat = Column::from(Series::new("cat".into(), &["a", "b", "a"]));
+/// let df = DataFrame::new(3, vec![num, cat])?;
 ///
 /// let mut atd = AutoTypeDetector::new();
-/// # let df = polars::prelude::DataFrame::new(0usize, vec![]).unwrap();
-/// // atd.fit(df.clone(), target)?;
-/// // let typed = atd.transform(df)?;
+/// atd.fit(df.clone())?;
+/// let typed = atd.transform(df)?;
+/// assert_eq!(typed.height(), 3);
+/// # Ok::<(), Box<dyn std::error::Error>>(())
 /// ```
 pub struct AutoTypeDetector {
     fitted: bool,
