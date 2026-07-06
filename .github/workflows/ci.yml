@@ -112,7 +112,9 @@ jobs:
         run: cargo install cargo-audit --locked
 
       - name: Audit
-        run: cargo audit
+        # quick-xml RUSTSECs are transitive via polars–io → object_store.
+        # Tracked: re-evaluate when polars bumps its quick-xml dependency.
+        run: cargo audit --ignore RUSTSEC-2026-0194 --ignore RUSTSEC-2026-0195
 
   publish-dry-run:
     name: Publish (dry-run)
