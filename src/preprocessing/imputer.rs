@@ -28,13 +28,17 @@ pub enum Strategy {
 ///
 /// ```rust
 /// use featrs::preprocessing::imputer::SimpleImputer;
-/// use featrs::preprocessing::imputer::Strategy;
 /// use featrs::traits::{Fit, Transform};
+/// use polars::prelude::{Column, DataFrame, NamedFrom, Series};
+///
+/// let col = Column::from(Series::new("x".into(), &[Some(1.0_f64), None, Some(3.0)]));
+/// let df = DataFrame::new(3, vec![col])?;
 ///
 /// let mut imp = SimpleImputer::mean();
-/// # let df = polars::prelude::DataFrame::new(0usize, vec![]).unwrap();
-/// // imp.fit(df.clone(), target)?;
-/// // let filled = imp.transform(df)?;
+/// imp.fit(df.clone())?;
+/// let filled = imp.transform(df)?;
+/// assert_eq!(filled.height(), 3);
+/// # Ok::<(), Box<dyn std::error::Error>>(())
 /// ```
 pub struct SimpleImputer {
     fitted: bool,

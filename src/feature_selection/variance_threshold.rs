@@ -18,8 +18,18 @@ use polars::prelude::*;
 ///
 /// ```rust
 /// use featrs::feature_selection::VarianceThreshold;
+/// use featrs::traits::{Fit, Transform};
+/// use polars::prelude::{Column, DataFrame, NamedFrom, Series};
+///
+/// let low = Column::from(Series::new("low".into(), &[1.0_f64, 1.0, 1.0]));
+/// let high = Column::from(Series::new("high".into(), &[1.0_f64, 5.0, 9.0]));
+/// let df = DataFrame::new(3, vec![low, high])?;
 ///
 /// let mut vt = VarianceThreshold::new(0.01);
+/// vt.fit(df.clone())?;
+/// let filtered = vt.transform(df)?;
+/// assert_eq!(filtered.width(), 1);
+/// # Ok::<(), Box<dyn std::error::Error>>(())
 /// ```
 pub struct VarianceThreshold {
     fitted: bool,

@@ -16,11 +16,16 @@ use polars::prelude::*;
 /// ```rust
 /// use featrs::time_series::lag::Lagger;
 /// use featrs::traits::{Fit, Transform};
+/// use polars::prelude::{Column, DataFrame, NamedFrom, Series};
+///
+/// let col = Column::from(Series::new("value".into(), &[1.0_f64, 2.0, 3.0, 4.0, 5.0]));
+/// let df = DataFrame::new(5, vec![col])?;
 ///
 /// let mut lagger = Lagger::new(&["value"], &[1, 3, 7]);
-/// # let df = polars::prelude::DataFrame::new(0usize, vec![]).unwrap();
-/// // lagger.fit(df.clone(), target)?;
-/// // let lagged = lagger.transform(df)?;
+/// lagger.fit(df.clone())?;
+/// let lagged = lagger.transform(df)?;
+/// assert_eq!(lagged.height(), 5);
+/// # Ok::<(), Box<dyn std::error::Error>>(())
 /// ```
 pub struct Lagger {
     fitted: bool,

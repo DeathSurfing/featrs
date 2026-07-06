@@ -16,11 +16,16 @@ use polars::prelude::*;
 /// ```rust
 /// use featrs::preprocessing::binarizer::Binarizer;
 /// use featrs::traits::{Fit, Transform};
+/// use polars::prelude::{Column, DataFrame, NamedFrom, Series};
+///
+/// let col = Column::from(Series::new("x".into(), &[-1.0_f64, 0.5, 2.0]));
+/// let df = DataFrame::new(3, vec![col])?;
 ///
 /// let mut b = Binarizer::new(0.5);
-/// # let df = polars::prelude::DataFrame::new(0usize, vec![]).unwrap();
-/// // b.fit(df.clone(), target)?;
-/// // let binarized = b.transform(df)?;
+/// b.fit(df.clone())?;
+/// let binarized = b.transform(df)?;
+/// assert_eq!(binarized.height(), 3);
+/// # Ok::<(), Box<dyn std::error::Error>>(())
 /// ```
 pub struct Binarizer {
     fitted: bool,

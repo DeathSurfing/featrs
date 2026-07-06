@@ -20,11 +20,16 @@ use crate::util::{replace_f64_column, require_f64_columns};
 /// ```rust
 /// use featrs::preprocessing::scaler::StandardScaler;
 /// use featrs::traits::{Fit, Transform};
+/// use polars::prelude::{Column, DataFrame, NamedFrom, Series};
+///
+/// let col = Column::from(Series::new("x".into(), &[1.0_f64, 2.0, 3.0]));
+/// let df = DataFrame::new(3, vec![col])?;
 ///
 /// let mut scaler = StandardScaler::new();
-/// # let df = polars::prelude::DataFrame::new(0usize, vec![]).unwrap();
-/// // scaler.fit(df.clone(), target)?;
-/// // let scaled = scaler.transform(df)?;
+/// scaler.fit(df.clone())?;
+/// let scaled = scaler.transform(df)?;
+/// assert_eq!(scaled.height(), 3);
+/// # Ok::<(), Box<dyn std::error::Error>>(())
 /// ```
 pub struct StandardScaler {
     fitted: bool,
@@ -185,11 +190,16 @@ impl Transform<DataFrame> for StandardScaler {
 /// ```rust
 /// use featrs::preprocessing::scaler::MinMaxScaler;
 /// use featrs::traits::{Fit, Transform};
+/// use polars::prelude::{Column, DataFrame, NamedFrom, Series};
+///
+/// let col = Column::from(Series::new("x".into(), &[1.0_f64, 2.0, 3.0]));
+/// let df = DataFrame::new(3, vec![col])?;
 ///
 /// let mut scaler = MinMaxScaler::new().feature_range((-1.0, 1.0));
-/// # let df = polars::prelude::DataFrame::new(0usize, vec![]).unwrap();
-/// // scaler.fit(df.clone(), target)?;
-/// // let scaled = scaler.transform(df)?;
+/// scaler.fit(df.clone())?;
+/// let scaled = scaler.transform(df)?;
+/// assert_eq!(scaled.height(), 3);
+/// # Ok::<(), Box<dyn std::error::Error>>(())
 /// ```
 pub struct MinMaxScaler {
     fitted: bool,
@@ -326,11 +336,16 @@ impl Transform<DataFrame> for MinMaxScaler {
 /// ```rust
 /// use featrs::preprocessing::scaler::RobustScaler;
 /// use featrs::traits::{Fit, Transform};
+/// use polars::prelude::{Column, DataFrame, NamedFrom, Series};
+///
+/// let col = Column::from(Series::new("x".into(), &[1.0_f64, 2.0, 3.0]));
+/// let df = DataFrame::new(3, vec![col])?;
 ///
 /// let mut scaler = RobustScaler::new().with_centering(true);
-/// # let df = polars::prelude::DataFrame::new(0usize, vec![]).unwrap();
-/// // scaler.fit(df.clone(), target)?;
-/// // let scaled = scaler.transform(df)?;
+/// scaler.fit(df.clone())?;
+/// let scaled = scaler.transform(df)?;
+/// assert_eq!(scaled.height(), 3);
+/// # Ok::<(), Box<dyn std::error::Error>>(())
 /// ```
 pub struct RobustScaler {
     fitted: bool,

@@ -17,11 +17,16 @@ use polars::prelude::*;
 /// ```rust
 /// use featrs::preprocessing::missing_indicator::MissingIndicator;
 /// use featrs::traits::{Fit, Transform};
+/// use polars::prelude::{Column, DataFrame, NamedFrom, Series};
 ///
-/// let mut ind = MissingIndicator::new(&["age", "income"]);
-/// # let df = polars::prelude::DataFrame::new(0usize, vec![]).unwrap();
-/// // ind.fit(df.clone())?;
-/// // let marked = ind.transform(df)?;
+/// let col = Column::from(Series::new("x".into(), &[Some(1.0_f64), None, Some(3.0)]));
+/// let df = DataFrame::new(3, vec![col])?;
+///
+/// let mut ind = MissingIndicator::new(&["x"]);
+/// ind.fit(df.clone())?;
+/// let marked = ind.transform(df)?;
+/// assert_eq!(marked.height(), 3);
+/// # Ok::<(), Box<dyn std::error::Error>>(())
 /// ```
 pub struct MissingIndicator {
     fitted: bool,

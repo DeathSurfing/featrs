@@ -59,13 +59,19 @@ fn series_mul(a: &Series, b: &Series) -> Result<Series> {
 /// ```rust
 /// use featrs::preprocessing::polynomial_features::PolynomialFeatures;
 /// use featrs::traits::{Fit, Transform};
+/// use polars::prelude::{Column, DataFrame, NamedFrom, Series};
 ///
-/// let mut pf = PolynomialFeatures::new(2).unwrap()
+/// let a = Column::from(Series::new("a".into(), &[1.0_f64, 2.0, 3.0]));
+/// let b = Column::from(Series::new("b".into(), &[4.0_f64, 5.0, 6.0]));
+/// let df = DataFrame::new(3, vec![a, b])?;
+///
+/// let mut pf = PolynomialFeatures::new(2)?
 ///     .include_bias(true)
 ///     .interaction_only(false);
-/// # let df = polars::prelude::DataFrame::new(0usize, vec![]).unwrap();
-/// // pf.fit(df.clone())?;
-/// // let result = pf.transform(df)?;
+/// pf.fit(df.clone())?;
+/// let result = pf.transform(df)?;
+/// assert_eq!(result.height(), 3);
+/// # Ok::<(), Box<dyn std::error::Error>>(())
 /// ```
 pub struct PolynomialFeatures {
     fitted: bool,
@@ -101,12 +107,12 @@ impl PolynomialFeatures {
     /// ```rust
     /// use featrs::preprocessing::polynomial_features::PolynomialFeatures;
     ///
-    /// let pf = PolynomialFeatures::builder()
+    /// let _pf = PolynomialFeatures::builder()
     ///     .degree(3)
     ///     .include_bias(false)
     ///     .interaction_only(true)
-    ///     .build()
-    ///     .unwrap();
+    ///     .build()?;
+    /// # Ok::<(), Box<dyn std::error::Error>>(())
     /// ```
     pub fn builder() -> PolynomialFeaturesBuilder {
         PolynomialFeaturesBuilder::default()

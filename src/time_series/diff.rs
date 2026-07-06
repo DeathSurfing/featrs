@@ -12,11 +12,16 @@ use polars::prelude::*;
 /// ```rust
 /// use featrs::time_series::diff::Difference;
 /// use featrs::traits::{Fit, Transform};
+/// use polars::prelude::{Column, DataFrame, NamedFrom, Series};
+///
+/// let col = Column::from(Series::new("value".into(), &[10.0_f64, 20.0, 30.0, 40.0]));
+/// let df = DataFrame::new(4, vec![col])?;
 ///
 /// let mut d = Difference::new(&["value"], 1, false);
-/// # let df = polars::prelude::DataFrame::new(0usize, vec![]).unwrap();
-/// // d.fit(df.clone(), target)?;
-/// // let diffed = d.transform(df)?;
+/// d.fit(df.clone())?;
+/// let diffed = d.transform(df)?;
+/// assert_eq!(diffed.height(), 4);
+/// # Ok::<(), Box<dyn std::error::Error>>(())
 /// ```
 pub struct Difference {
     fitted: bool,

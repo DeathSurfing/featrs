@@ -148,9 +148,21 @@ impl ScoreFunction for FClassif {
 /// ```rust
 /// use featrs::feature_selection::SelectKBest;
 /// use featrs::feature_selection::select_kbest::FClassif;
+/// use featrs::traits::{FitSupervised, Transform};
+/// use polars::prelude::{Column, DataFrame, NamedFrom, Series};
 ///
-/// // Keep the single feature with the highest F-score
+/// let a = Column::from(Series::new("noise".into(), &[1.0_f64, 2.0, 3.0, 4.0]));
+/// let b = Column::from(Series::new("signal".into(), &[0.0_f64, 1.0, 2.0, 10.0]));
+/// let features = DataFrame::new(4, vec![a, b])?;
+///
+/// let target = Column::from(Series::new("y".into(), &[0.0_f64, 0.0, 1.0, 1.0]));
+/// let y = DataFrame::new(4, vec![target])?;
+///
 /// let mut skb = SelectKBest::new(1, Box::new(FClassif::new()));
+/// skb.fit(features.clone(), y.clone())?;
+/// let selected = skb.transform(features)?;
+/// assert_eq!(selected.width(), 1);
+/// # Ok::<(), Box<dyn std::error::Error>>(())
 /// ```
 pub struct SelectKBest {
     fitted: bool,

@@ -5,12 +5,18 @@
 //!
 //! # Quick start
 //!
-//! ```rust,ignore
+//! ```rust
 //! use featrs::prelude::*;
+//! use polars::prelude::{Column, DataFrame, NamedFrom, Series};
+//!
+//! let col = Column::from(Series::new("x".into(), &[1.0_f64, 2.0, 3.0]));
+//! let df = DataFrame::new(3, vec![col])?;
 //!
 //! let mut scaler = StandardScaler::new();
-//! scaler.fit(df.clone(), target)?;
+//! scaler.fit(df.clone())?;
 //! let scaled = scaler.transform(df)?;
+//! assert_eq!(scaled.height(), 3);
+//! # Ok::<(), Box<dyn std::error::Error>>(())
 //! ```
 //!
 //! # Modules
@@ -40,8 +46,10 @@ pub mod util;
 
 /// Convenient glob import of the most common types.
 ///
-/// ```rust,ignore
+/// ```rust
 /// use featrs::prelude::*;
+///
+/// let _scaler = StandardScaler::new();
 /// ```
 pub mod prelude {
     pub use crate::feature_selection::SelectKBest;

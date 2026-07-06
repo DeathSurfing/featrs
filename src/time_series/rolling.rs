@@ -28,11 +28,16 @@ pub enum RollingFn {
 /// ```rust
 /// use featrs::time_series::rolling::{RollingAggregator, RollingFn};
 /// use featrs::traits::{Fit, Transform};
+/// use polars::prelude::{Column, DataFrame, NamedFrom, Series};
 ///
-/// let mut r = RollingAggregator::new(&["value"], 7, RollingFn::Mean);
-/// # let df = polars::prelude::DataFrame::new(0usize, vec![]).unwrap();
-/// // r.fit(df.clone(), target)?;
-/// // let rolled = r.transform(df)?;
+/// let col = Column::from(Series::new("value".into(), &[1.0_f64, 2.0, 3.0, 4.0, 5.0]));
+/// let df = DataFrame::new(5, vec![col])?;
+///
+/// let mut r = RollingAggregator::new(&["value"], 3, RollingFn::Mean);
+/// r.fit(df.clone())?;
+/// let rolled = r.transform(df)?;
+/// assert_eq!(rolled.height(), 5);
+/// # Ok::<(), Box<dyn std::error::Error>>(())
 /// ```
 pub struct RollingAggregator {
     fitted: bool,
