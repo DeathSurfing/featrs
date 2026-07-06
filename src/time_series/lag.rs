@@ -83,7 +83,13 @@ impl Transform<DataFrame> for Lagger {
         let mut out = x.clone();
 
         for col in &self.columns {
-            let s = out.column(col.as_str()).unwrap().clone();
+            let s = out.column(col.as_str()).map_err(|e| {
+                Error::InvalidInput(format!(
+                    "Lagger.transform: column '{}' not found. {}",
+                    col, e
+                ))
+            })?;
+            let s = s.clone();
             for &period in &self.periods {
                 let shifted = s.shift(period);
                 let lag_name = format!("{}_lag_{}", col, period);

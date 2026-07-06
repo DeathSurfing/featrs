@@ -174,8 +174,14 @@ impl Transform<DataFrame> for AutoTypeDetector {
         if !self.fitted {
             return Err(Error::NotFitted("AutoTypeDetector".into()));
         }
-        let types = self.column_types.as_ref().unwrap();
-        let encoders = self.encoders.as_ref().unwrap();
+        let types = self
+            .column_types
+            .as_ref()
+            .ok_or_else(|| Error::NotFitted("AutoTypeDetector has not been fitted.".into()))?;
+        let encoders = self
+            .encoders
+            .as_ref()
+            .ok_or_else(|| Error::NotFitted("AutoTypeDetector has not been fitted.".into()))?;
         let mut parts: Vec<DataFrame> = Vec::new();
         let mut numeric_cols: Vec<Column> = Vec::new();
 

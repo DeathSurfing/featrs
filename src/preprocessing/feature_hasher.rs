@@ -85,11 +85,21 @@ impl Transform<DataFrame> for FeatureHasher {
         let mut buckets = vec![vec![0.0f64; n_rows]; self.n_features];
 
         for col in &self.columns {
-            let s = x.column(col.as_str()).unwrap().as_materialized_series();
-            let ca = s.str().map_err(|_| {
+            let s = x
+                .column(col.as_str())
+                .map_err(|e| {
+                    Error::InvalidInput(format!(
+                        "FeatureHasher.transform: column '{}' not found. {}",
+                        col, e
+                    ))
+                })?
+                .as_materialized_series();
+            let ca = s.str().map_err(|e| {
                 Error::InvalidInput(format!(
-                    "FeatureHasher: column '{}' is not a string column.",
-                    col
+                    "FeatureHasher.transform: column '{}' has dtype {}; expected String. {}",
+                    col,
+                    s.dtype(),
+                    e
                 ))
             })?;
             for (i, opt) in ca.iter().enumerate() {

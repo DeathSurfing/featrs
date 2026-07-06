@@ -80,7 +80,13 @@ impl Transform<DataFrame> for Difference {
         let mut out = x.clone();
 
         for col in &self.columns {
-            let s = out.column(col.as_str()).unwrap().clone();
+            let s = out.column(col.as_str()).map_err(|e| {
+                Error::InvalidInput(format!(
+                    "Difference.transform: column '{}' not found. {}",
+                    col, e
+                ))
+            })?;
+            let s = s.clone();
 
             let suffix = if self.pct_change { "pct" } else { "diff" };
             let col_name = format!("{}_{}_{}", col, suffix, self.period);

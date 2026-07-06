@@ -91,7 +91,14 @@ impl Fit<DataFrame, DataFrame> for SimpleImputer {
             if col.dtype() != &DataType::Float64 {
                 continue;
             }
-            let ca = col.f64().unwrap();
+            let ca = col.f64().map_err(|e| {
+                Error::InvalidInput(format!(
+                    "SimpleImputer.fit: column '{}' has dtype {}; expected Float64. {}",
+                    name,
+                    col.dtype(),
+                    e
+                ))
+            })?;
             let all_vals: Vec<f64> = ca.iter().flatten().collect();
             let has_missing = ca.iter().any(|v| v.is_none());
 
@@ -142,7 +149,13 @@ impl Fit<DataFrame, DataFrame> for SimpleImputer {
                     for &v in &all_vals {
                         *freq.entry(v.to_bits()).or_default() += 1;
                     }
-                    let (max_key, _) = freq.into_iter().max_by_key(|&(_, c)| c).unwrap();
+                    let (max_key, _) =
+                        freq.into_iter().max_by_key(|&(_, c)| c).ok_or_else(|| {
+                            Error::Computation(format!(
+                                "SimpleImputer(MostFrequent): column '{}' has no non-null values",
+                                name
+                            ))
+                        })?;
                     f64::from_bits(max_key)
                 }
                 Strategy::Constant(v) => v,
@@ -168,7 +181,13 @@ impl Transform<DataFrame> for SimpleImputer {
                     .into(),
             ));
         }
-        let fill_values = self.fill_values.as_ref().unwrap();
+        let fill_values = self.fill_values.as_ref().ok_or_else(|| {
+            Error::NotFitted(
+                "SimpleImputer has not been fitted. \
+                 Call .fit(dataframe, target) before .transform()."
+                    .into(),
+            )
+        })?;
         let mut out = x.clone();
 
         for (name, fill) in fill_values {
@@ -192,7 +211,12 @@ impl Transform<DataFrame> for SimpleImputer {
             let filled: ChunkedArray<Float64Type> =
                 ca.iter().map(|opt| opt.or(Some(*fill))).collect();
             out.replace(name.as_str(), filled.into_series().into())
-                .unwrap();
+                .map_err(|e| {
+                    Error::Computation(format!(
+                        "SimpleImputer.transform: failed to replace column '{}'. {}",
+                        name, e
+                    ))
+                })?;
         }
 
         Ok(out)

@@ -87,7 +87,12 @@ impl Transform<DataFrame> for MissingIndicator {
         for col in &self.columns {
             let s = out
                 .column(col.as_str())
-                .unwrap()
+                .map_err(|e| {
+                    Error::InvalidInput(format!(
+                        "MissingIndicator.transform: column '{}' not found. {}",
+                        col, e
+                    ))
+                })?
                 .as_materialized_series()
                 .clone();
             let has_missing = s.null_count() > 0;

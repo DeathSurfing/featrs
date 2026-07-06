@@ -8,17 +8,35 @@ use crate::traits::{Error, Fit, Result, Transform};
 use crate::util::require_f64_columns;
 use polars::prelude::*;
 
-fn series_pow(s: &Series, exp: usize) -> Series {
-    let ca = s.f64().expect("expected f64 series");
+fn series_pow(s: &Series, exp: usize) -> Result<Series> {
+    let ca = s.f64().map_err(|e| {
+        Error::Computation(format!(
+            "PolynomialFeatures: expected f64 series for column '{}'. {}",
+            s.name(),
+            e
+        ))
+    })?;
     let exp_f64 = exp as f64;
     let result: ChunkedArray<Float64Type> =
         ca.iter().map(|opt| opt.map(|v| v.powf(exp_f64))).collect();
-    result.into_series()
+    Ok(result.into_series())
 }
 
-fn series_mul(a: &Series, b: &Series) -> Series {
-    let ca_a = a.f64().expect("expected f64 series");
-    let ca_b = b.f64().expect("expected f64 series");
+fn series_mul(a: &Series, b: &Series) -> Result<Series> {
+    let ca_a = a.f64().map_err(|e| {
+        Error::Computation(format!(
+            "PolynomialFeatures: expected f64 series for column '{}'. {}",
+            a.name(),
+            e
+        ))
+    })?;
+    let ca_b = b.f64().map_err(|e| {
+        Error::Computation(format!(
+            "PolynomialFeatures: expected f64 series for column '{}'. {}",
+            b.name(),
+            e
+        ))
+    })?;
     let result: ChunkedArray<Float64Type> = ca_a
         .iter()
         .zip(ca_b.iter())
@@ -27,7 +45,7 @@ fn series_mul(a: &Series, b: &Series) -> Series {
             _ => None,
         })
         .collect();
-    result.into_series()
+    Ok(result.into_series())
 }
 
 /// Generate polynomial and interaction features.
@@ -204,9 +222,11 @@ impl PolynomialFeaturesBuilder {
     ///
     /// Panics if `degree` was not set.
     pub fn build(self) -> PolynomialFeatures {
-        let degree = self.degree.expect(
-            "PolynomialFeaturesBuilder: degree is required. Call .degree(n) before .build().",
-        );
+        let Some(degree) = self.degree else {
+            panic!(
+                "PolynomialFeaturesBuilder: degree is required. Call .degree(n) before .build()."
+            );
+        };
         PolynomialFeatures {
             fitted: false,
             degree,
@@ -250,7 +270,13 @@ impl Transform<DataFrame> for PolynomialFeatures {
                     .into(),
             ));
         }
-        let input_columns = self.input_columns.as_ref().unwrap();
+        let input_columns = self.input_columns.as_ref().ok_or_else(|| {
+            Error::NotFitted(
+                "PolynomialFeatures has not been fitted. \
+                 Call .fit(dataframe, target) before .transform()."
+                    .into(),
+            )
+        })?;
         let powers = Self::generate_powers(input_columns.len(), self.degree, self.interaction_only);
 
         let mut columns: Vec<Column> = Vec::new();
@@ -285,20 +311,26 @@ impl Transform<DataFrame> for PolynomialFeatures {
                     .clone();
 
                 if !has_terms {
-                    series_vec = if p > 1 {
-                        Some(series_pow(&orig_series, p))
+                    series_vec = Some(if p > 1 {
+                        series_pow(&orig_series, p)?
                     } else {
-                        Some(orig_series)
-                    };
+                        orig_series
+                    });
                     col_name = name.clone();
                     has_terms = true;
                 } else {
                     let powered = if p > 1 {
-                        series_pow(&orig_series, p)
+                        series_pow(&orig_series, p)?
                     } else {
                         orig_series
                     };
-                    series_vec = Some(series_mul(&series_vec.unwrap(), &powered));
+                    let prev = series_vec.as_ref().ok_or_else(|| {
+                        Error::Computation(
+                            "PolynomialFeatures: internal state error — series_vec unset before mul"
+                                .into(),
+                        )
+                    })?;
+                    series_vec = Some(series_mul(prev, &powered)?);
                     col_name.push('_');
                     col_name.push_str(name);
                 }

@@ -122,7 +122,20 @@ impl Transform<DataFrame> for Normalizer {
 
         let mut col_data: Vec<Vec<f64>> = Vec::with_capacity(n_cols);
         for name in &col_names {
-            let ca = x.column(name).unwrap().f64().unwrap();
+            let s = x.column(name).map_err(|e| {
+                Error::InvalidInput(format!(
+                    "Normalizer.transform: column '{}' not found. {}",
+                    name, e
+                ))
+            })?;
+            let ca = s.f64().map_err(|e| {
+                Error::InvalidInput(format!(
+                    "Normalizer.transform: column '{}' has dtype {}; expected Float64. {}",
+                    name,
+                    s.dtype(),
+                    e
+                ))
+            })?;
             col_data.push(ca.iter().flatten().collect());
         }
 

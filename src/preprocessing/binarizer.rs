@@ -4,6 +4,7 @@
 //! become `1.0`, others become `0.0`.
 
 use crate::traits::{Error, Fit, Result, Transform};
+use crate::util::replace_f64_column;
 use polars::prelude::*;
 
 /// Binarize data according to a threshold.
@@ -86,16 +87,12 @@ impl Transform<DataFrame> for Binarizer {
             .collect();
 
         let mut out = x.clone();
+        let threshold = self.threshold;
 
         for name in &col_names {
-            let s = out.column(name.as_str()).unwrap();
-            let ca = s.f64().unwrap();
-            let binarized: ChunkedArray<Float64Type> = ca
-                .iter()
-                .map(|opt| opt.map(|v| if v > self.threshold { 1.0 } else { 0.0 }))
-                .collect();
-            out.replace(name.as_str(), binarized.into_series().into())
-                .unwrap();
+            replace_f64_column(&mut out, name.as_str(), "Binarizer", |v| {
+                if v > threshold { 1.0 } else { 0.0 }
+            })?;
         }
 
         Ok(out)
