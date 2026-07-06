@@ -88,10 +88,10 @@ impl Default for OneHotEncoder {
     }
 }
 
-impl Fit<DataFrame, DataFrame> for OneHotEncoder {
+impl Fit<DataFrame> for OneHotEncoder {
     type Output = ();
 
-    fn fit(&mut self, x: DataFrame, _y: DataFrame) -> Result<()> {
+    fn fit(&mut self, x: DataFrame) -> Result<()> {
         if x.height() == 0 {
             return Err(Error::InvalidInput(
                 "OneHotEncoder.fit received a DataFrame with 0 rows. \
@@ -225,10 +225,10 @@ impl Default for LabelEncoder {
     }
 }
 
-impl Fit<DataFrame, DataFrame> for LabelEncoder {
+impl Fit<DataFrame> for LabelEncoder {
     type Output = ();
 
-    fn fit(&mut self, x: DataFrame, _y: DataFrame) -> Result<()> {
+    fn fit(&mut self, x: DataFrame) -> Result<()> {
         if x.width() != 1 {
             return Err(Error::InvalidInput(format!(
                 "LabelEncoder.fit expects a single column but got {} columns. \
@@ -337,10 +337,10 @@ impl Default for OrdinalEncoder {
     }
 }
 
-impl Fit<DataFrame, DataFrame> for OrdinalEncoder {
+impl Fit<DataFrame> for OrdinalEncoder {
     type Output = ();
 
-    fn fit(&mut self, x: DataFrame, _y: DataFrame) -> Result<()> {
+    fn fit(&mut self, x: DataFrame) -> Result<()> {
         if x.width() == 0 {
             return Err(Error::InvalidInput(
                 "OrdinalEncoder.fit received a DataFrame with 0 columns. \
@@ -452,9 +452,8 @@ mod tests {
     fn test_one_hot_encoder() {
         let mut enc = OneHotEncoder::new();
         let df = make_categorical_df();
-        let y = df.clone();
 
-        enc.fit(df.clone(), y).unwrap();
+        enc.fit(df.clone()).unwrap();
         let result = enc.transform(df).unwrap();
 
         assert_eq!(result.width(), 6);
@@ -465,9 +464,8 @@ mod tests {
     fn test_one_hot_encoder_drop_first() {
         let mut enc = OneHotEncoder::new().drop_first(true);
         let df = make_categorical_df();
-        let y = df.clone();
 
-        enc.fit(df.clone(), y).unwrap();
+        enc.fit(df.clone()).unwrap();
         let result = enc.transform(df).unwrap();
 
         assert_eq!(result.width(), 4);
@@ -481,9 +479,8 @@ mod tests {
             &["red", "blue", "red", "green"],
         ));
         let df = DataFrame::new(4, vec![colors]).unwrap();
-        let y = df.clone();
 
-        enc.fit(df.clone(), y).unwrap();
+        enc.fit(df.clone()).unwrap();
         let result = enc.transform(df).unwrap();
 
         let vals: Vec<u32> = result
@@ -501,9 +498,8 @@ mod tests {
     fn test_ordinal_encoder() {
         let mut enc = OrdinalEncoder::new();
         let df = make_categorical_df();
-        let y = df.clone();
 
-        enc.fit(df.clone(), y).unwrap();
+        enc.fit(df.clone()).unwrap();
         let result = enc.transform(df).unwrap();
 
         let color_vals: Vec<u32> = result

@@ -52,10 +52,10 @@ impl CyclicalEncoder {
     }
 }
 
-impl Fit<DataFrame, DataFrame> for CyclicalEncoder {
+impl Fit<DataFrame> for CyclicalEncoder {
     type Output = ();
 
-    fn fit(&mut self, x: DataFrame, _y: DataFrame) -> Result<()> {
+    fn fit(&mut self, x: DataFrame) -> Result<()> {
         for (col, _) in &self.columns {
             if x.column(col.as_str()).is_err() {
                 return Err(Error::InvalidInput(format!(
@@ -137,9 +137,8 @@ mod tests {
         let vals = Column::from(Series::new("hour".into(), &[0.0f64, 6.0, 12.0, 18.0]));
         let df = DataFrame::new(4, vec![vals]).unwrap();
         let mut enc = CyclicalEncoder::new(&["hour"], 24);
-        let y = df.clone();
 
-        enc.fit(df.clone(), y).unwrap();
+        enc.fit(df.clone()).unwrap();
         let result = enc.transform(df).unwrap();
 
         assert_eq!(result.width(), 3); // hour, hour_sin, hour_cos

@@ -3,7 +3,7 @@
 //! Provides [`SelectKBest`] and the [`FClassif`] scoring function
 //! (ANOVA F-value between each feature and the target).
 
-use crate::traits::{Error, Fit, Result, Transform};
+use crate::traits::{Error, FitSupervised, Result, Transform};
 use polars::prelude::*;
 
 /// Scoring function for [`SelectKBest`].
@@ -138,6 +138,11 @@ impl ScoreFunction for FClassif {
 
 /// Select the top `k` features according to a [`ScoreFunction`].
 ///
+/// `SelectKBest` is supervised: it implements [`FitSupervised`] and requires a
+/// target `y` at `fit` time. Only `Float64` feature columns are scored; columns
+/// of other dtypes are silently skipped. The target `y` must be a single
+/// `Float64` column with at least two distinct classes.
+///
 /// # Example
 ///
 /// ```rust
@@ -178,7 +183,7 @@ impl SelectKBest {
     }
 }
 
-impl Fit<DataFrame, DataFrame> for SelectKBest {
+impl FitSupervised<DataFrame, DataFrame> for SelectKBest {
     type Output = ();
 
     fn fit(&mut self, x: DataFrame, y: DataFrame) -> Result<()> {

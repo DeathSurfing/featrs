@@ -48,10 +48,10 @@ impl Difference {
     }
 }
 
-impl Fit<DataFrame, DataFrame> for Difference {
+impl Fit<DataFrame> for Difference {
     type Output = ();
 
-    fn fit(&mut self, x: DataFrame, _y: DataFrame) -> Result<()> {
+    fn fit(&mut self, x: DataFrame) -> Result<()> {
         if self.columns.is_empty() {
             return Err(Error::InvalidInput(
                 "Difference: at least one column is required.".into(),
@@ -141,9 +141,8 @@ mod tests {
         let vals = Column::from(Series::new("x".into(), &[10.0f64, 20.0, 30.0, 40.0]));
         let df = DataFrame::new(4, vec![vals]).unwrap();
         let mut d = Difference::diff(&["x"], 1);
-        let y = df.clone();
 
-        d.fit(df.clone(), y).unwrap();
+        d.fit(df.clone()).unwrap();
         let result = d.transform(df).unwrap();
 
         let diffed = result.column("x_diff_1").unwrap().f64().unwrap();
@@ -157,9 +156,8 @@ mod tests {
         let vals = Column::from(Series::new("x".into(), &[100.0f64, 110.0, 121.0]));
         let df = DataFrame::new(3, vec![vals]).unwrap();
         let mut d = Difference::pct_change(&["x"], 1);
-        let y = df.clone();
 
-        d.fit(df.clone(), y).unwrap();
+        d.fit(df.clone()).unwrap();
         let result = d.transform(df).unwrap();
 
         let pct = result.column("x_pct_1").unwrap().f64().unwrap();

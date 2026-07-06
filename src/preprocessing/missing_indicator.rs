@@ -15,12 +15,12 @@ use polars::prelude::*;
 /// # Example
 ///
 /// ```rust
-/// use featrs::traits::missing_indicator::MissingIndicator;
+/// use featrs::preprocessing::missing_indicator::MissingIndicator;
 /// use featrs::traits::{Fit, Transform};
 ///
 /// let mut ind = MissingIndicator::new(&["age", "income"]);
 /// # let df = polars::prelude::DataFrame::new(0usize, vec![]).unwrap();
-/// // ind.fit(df.clone(), target)?;
+/// // ind.fit(df.clone())?;
 /// // let marked = ind.transform(df)?;
 /// ```
 pub struct MissingIndicator {
@@ -50,10 +50,10 @@ impl MissingIndicator {
     }
 }
 
-impl Fit<DataFrame, DataFrame> for MissingIndicator {
+impl Fit<DataFrame> for MissingIndicator {
     type Output = ();
 
-    fn fit(&mut self, x: DataFrame, _y: DataFrame) -> Result<()> {
+    fn fit(&mut self, x: DataFrame) -> Result<()> {
         if self.all_columns {
             self.columns = x.get_column_names().iter().map(|s| s.to_string()).collect();
         }
@@ -128,9 +128,8 @@ mod tests {
         let a = Column::from(Series::new("x".into(), &[Some(1.0f64), None, Some(3.0)]));
         let df = DataFrame::new(3, vec![a]).unwrap();
         let mut ind = MissingIndicator::new(&["x"]);
-        let y = df.clone();
 
-        ind.fit(df.clone(), y).unwrap();
+        ind.fit(df.clone()).unwrap();
         let result = ind.transform(df).unwrap();
 
         assert_eq!(result.width(), 2); // x, x_missing

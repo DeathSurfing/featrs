@@ -95,10 +95,10 @@ impl RollingAggregator {
     }
 }
 
-impl Fit<DataFrame, DataFrame> for RollingAggregator {
+impl Fit<DataFrame> for RollingAggregator {
     type Output = ();
 
-    fn fit(&mut self, x: DataFrame, _y: DataFrame) -> Result<()> {
+    fn fit(&mut self, x: DataFrame) -> Result<()> {
         if self.columns.is_empty() {
             return Err(Error::InvalidInput(
                 "RollingAggregator: at least one column is required.".into(),
@@ -170,9 +170,8 @@ mod tests {
         let vals = Column::from(Series::new("x".into(), &[1.0f64, 2.0, 3.0, 4.0, 5.0]));
         let df = DataFrame::new(5, vec![vals]).unwrap();
         let mut r = RollingAggregator::new(&["x"], 3, RollingFn::Mean);
-        let y = df.clone();
 
-        r.fit(df.clone(), y).unwrap();
+        r.fit(df.clone()).unwrap();
         let result = r.transform(df).unwrap();
 
         assert_eq!(result.width(), 2);

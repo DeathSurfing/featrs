@@ -73,10 +73,10 @@ impl SimpleImputer {
     }
 }
 
-impl Fit<DataFrame, DataFrame> for SimpleImputer {
+impl Fit<DataFrame> for SimpleImputer {
     type Output = ();
 
-    fn fit(&mut self, x: DataFrame, _y: DataFrame) -> Result<()> {
+    fn fit(&mut self, x: DataFrame) -> Result<()> {
         if x.height() == 0 {
             return Err(Error::InvalidInput(
                 "SimpleImputer.fit received a DataFrame with 0 rows. \
@@ -238,9 +238,8 @@ mod tests {
     fn test_imputer_mean() {
         let mut imp = SimpleImputer::mean();
         let df = make_test_df();
-        let y = df.clone();
 
-        imp.fit(df.clone(), y).unwrap();
+        imp.fit(df.clone()).unwrap();
         let result = imp.transform(df).unwrap();
 
         let x_vals: Vec<f64> = result
@@ -268,9 +267,8 @@ mod tests {
     fn test_imputer_constant() {
         let mut imp = SimpleImputer::constant(0.0);
         let df = make_test_df();
-        let y = df.clone();
 
-        imp.fit(df.clone(), y).unwrap();
+        imp.fit(df.clone()).unwrap();
         let result = imp.transform(df).unwrap();
 
         let x_vals: Vec<f64> = result
@@ -296,7 +294,7 @@ mod tests {
         ));
         let df = DataFrame::new(4, vec![x]).unwrap();
         let mut imp = SimpleImputer::median();
-        imp.fit(df.clone(), df.clone()).unwrap();
+        imp.fit(df.clone()).unwrap();
         let _ = imp.transform(df).unwrap();
     }
 }
