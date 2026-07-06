@@ -1,9 +1,3 @@
-//! Imputation transformations.
-//!
-//! Analogous to `sklearn.preprocessing.SimpleImputer`.
-
-
-
 /// Imputation strategy.
 #[derive(Clone, Copy)]
 pub enum Strategy {

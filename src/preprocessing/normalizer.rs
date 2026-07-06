@@ -1,9 +1,5 @@
-//! Normalization transformations.
-//!
-//! Analogous to `sklearn.preprocessing.Normalizer`.
-
 use crate::traits::{Error, Fit, Result, Transform};
-use ndarray::Array2;
+use polars::prelude::*;
 
 /// Normalize samples individually to unit norm.
 ///
@@ -42,18 +38,18 @@ impl Normalizer {
     }
 }
 
-impl Fit<f64, Array2<f64>, Array2<f64>> for Normalizer {
+impl Fit<DataFrame, DataFrame> for Normalizer {
     type Output = ();
 
-    fn fit(&mut self, _x: Array2<f64>, _y: Array2<f64>) -> Result<Self::Output> {
+    fn fit(&mut self, _x: DataFrame, _y: DataFrame) -> Result<Self::Output> {
         Ok(())
     }
 }
 
-impl Transform<f64, Array2<f64>> for Normalizer {
-    type Output = Array2<f64>;
+impl Transform<DataFrame> for Normalizer {
+    type Output = DataFrame;
 
-    fn transform(&self, _x: Array2<f64>) -> Result<Self::Output> {
+    fn transform(&self, _x: DataFrame) -> Result<Self::Output> {
         Err(Error::NotFitted("Normalizer".into()))
     }
 }

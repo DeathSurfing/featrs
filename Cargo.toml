@@ -11,17 +11,11 @@ keywords = ["feature-engineering", "machine-learning", "preprocessing", "scikit-
 categories = ["science", "data-structures"]
 
 [dependencies]
-ndarray = "0.16"
-ndarray-stats = "0.6"
-serde = { version = "1", features = ["derive"], optional = true }
+polars = "0.54"
 thiserror = "2"
 
 [dev-dependencies]
 approx = "0.5"
-
-[features]
-default = ["serde"]
-serialization = ["serde"]
 
 [lib]
 name = "featrs"

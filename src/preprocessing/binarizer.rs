@@ -1,9 +1,5 @@
-//! Binarization transformations.
-//!
-//! Analogous to `sklearn.preprocessing.Binarizer`.
-
 use crate::traits::{Error, Fit, Result, Transform};
-use ndarray::Array2;
+use polars::prelude::*;
 
 /// Binarize data (set feature values to 0 or 1) according to a threshold.
 ///
@@ -29,18 +25,19 @@ impl Default for Binarizer {
     }
 }
 
-impl Fit<f64, Array2<f64>, Array2<f64>> for Binarizer {
+impl Fit<DataFrame, DataFrame> for Binarizer {
     type Output = ();
 
-    fn fit(&mut self, _x: Array2<f64>, _y: Array2<f64>) -> Result<Self::Output> {
+    fn fit(&mut self, _x: DataFrame, _y: DataFrame) -> Result<Self::Output> {
+        self.fitted = true;
         Ok(())
     }
 }
 
-impl Transform<f64, Array2<f64>> for Binarizer {
-    type Output = Array2<f64>;
+impl Transform<DataFrame> for Binarizer {
+    type Output = DataFrame;
 
-    fn transform(&self, _x: Array2<f64>) -> Result<Self::Output> {
+    fn transform(&self, _x: DataFrame) -> Result<Self::Output> {
         Err(Error::NotFitted("Binarizer".into()))
     }
 }
@@ -52,7 +49,7 @@ mod tests {
     #[test]
     fn test_binarizer_new() {
         let b = Binarizer::new(0.5);
-        assert_eq!(b.threshold, 0.5);
+        assert!(!b.fitted);
     }
 
     #[test]

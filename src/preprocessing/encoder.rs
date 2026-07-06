@@ -1,7 +1,3 @@
-//! Categorical encoding transformations.
-//!
-//! Analogous to `sklearn.preprocessing` encoders.
-
 use std::collections::HashMap;
 
 /// Encode categorical features as a one-hot numeric array.

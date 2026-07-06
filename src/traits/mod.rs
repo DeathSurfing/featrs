@@ -12,16 +12,16 @@ pub enum Error {
 
 pub type Result<T> = std::result::Result<T, Error>;
 
-pub trait Fit<A, X, Y = X> {
+pub trait Fit<X, Y = X> {
     type Output;
     fn fit(&mut self, x: X, y: Y) -> Result<Self::Output>;
 }
 
-pub trait Transform<A, X> {
+pub trait Transform<X> {
     type Output;
     fn transform(&self, x: X) -> Result<Self::Output>;
 }
 
-pub trait FitTransform<A, X, Y = X>: Fit<A, X, Y> + Transform<A, X> {}
+pub trait FitTransform<X, Y = X>: Fit<X, Y> + Transform<X> {}
 
-impl<T, A, X, Y> FitTransform<A, X, Y> for T where T: Fit<A, X, Y> + Transform<A, X> {}
+impl<T, X, Y> FitTransform<X, Y> for T where T: Fit<X, Y> + Transform<X> {}
