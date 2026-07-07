@@ -198,4 +198,28 @@ mod tests {
             }
         }
     }
+
+    /// `fit` must reject non-String columns early instead of pushing the
+    /// dtype error to `transform` time (regression test for issue #6).
+    #[test]
+    fn test_fit_rejects_non_string_column() {
+        let c = Column::from(Series::new("count".into(), &[1_i32, 2, 3]));
+        let df = DataFrame::new(3, vec![c]).unwrap();
+        let mut fh = FeatureHasher::new(&["count"], 8);
+
+        let err = fh.fit(df.clone()).unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            msg.contains("expected String"),
+            "error should mention expected String, got: {msg}"
+        );
+
+        // A failed fit must not mark the hasher as fitted; transform then
+        // surfaces `NotFitted` rather than attempting to hash a numeric column.
+        let transform_err = fh.transform(df).unwrap_err().to_string();
+        assert!(
+            transform_err.contains("not fitted"),
+            "transform after a failed fit should report NotFitted, got: {transform_err}"
+        );
+    }
 }
