@@ -82,12 +82,18 @@ impl Fit<DataFrame> for FeatureHasher {
             ));
         }
         for col in &self.columns {
-            if x.column(col.as_str()).is_err() {
-                return Err(Error::InvalidInput(format!(
-                    "FeatureHasher: column '{}' not found.",
-                    col
-                )));
-            }
+            let s = x.column(col.as_str()).map_err(|_| {
+                Error::InvalidInput(format!("FeatureHasher.fit: column '{}' not found.", col))
+            })?;
+            let s = s.as_materialized_series();
+            s.str().map_err(|e| {
+                Error::InvalidInput(format!(
+                    "FeatureHasher.fit: column '{}' has dtype {}; expected String. {}",
+                    col,
+                    s.dtype(),
+                    e
+                ))
+            })?;
         }
         self.fitted = true;
         Ok(())
