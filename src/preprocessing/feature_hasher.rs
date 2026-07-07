@@ -82,12 +82,18 @@ impl Fit<DataFrame> for FeatureHasher {
             ));
         }
         for col in &self.columns {
-            if x.column(col.as_str()).is_err() {
-                return Err(Error::InvalidInput(format!(
-                    "FeatureHasher: column '{}' not found.",
-                    col
-                )));
-            }
+            let s = x.column(col.as_str()).map_err(|_| {
+                Error::InvalidInput(format!("FeatureHasher.fit: column '{}' not found.", col))
+            })?;
+            let s = s.as_materialized_series();
+            s.str().map_err(|e| {
+                Error::InvalidInput(format!(
+                    "FeatureHasher.fit: column '{}' has dtype {}; expected String. {}",
+                    col,
+                    s.dtype(),
+                    e
+                ))
+            })?;
         }
         self.fitted = true;
         Ok(())
@@ -191,5 +197,29 @@ mod tests {
                 assert!(frac == 0.0, "bucket value {v} must be integral");
             }
         }
+    }
+
+    /// `fit` must reject non-String columns early instead of pushing the
+    /// dtype error to `transform` time (regression test for issue #6).
+    #[test]
+    fn test_fit_rejects_non_string_column() {
+        let c = Column::from(Series::new("count".into(), &[1_i32, 2, 3]));
+        let df = DataFrame::new(3, vec![c]).unwrap();
+        let mut fh = FeatureHasher::new(&["count"], 8);
+
+        let err = fh.fit(df.clone()).unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            msg.contains("expected String"),
+            "error should mention expected String, got: {msg}"
+        );
+
+        // A failed fit must not mark the hasher as fitted; transform then
+        // surfaces `NotFitted` rather than attempting to hash a numeric column.
+        let transform_err = fh.transform(df).unwrap_err().to_string();
+        assert!(
+            transform_err.contains("not fitted"),
+            "transform after a failed fit should report NotFitted, got: {transform_err}"
+        );
     }
 }

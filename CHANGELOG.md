@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-07-07
+
+### Fixed
+
+- `FeatureHasher.fit` now validates that each configured column has `String`
+  dtype, surfacing type errors at fit time instead of pushing them to
+  `transform`. Non-String columns (e.g. numeric) now fail fast per the
+  pipeline contract (#6).
+
 ## [0.3.0] - 2026-07-06
 
 ### Changed (breaking)
@@ -95,7 +104,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Pipeline primitives: `Pipeline`, `ColumnTransformer` with `Remainder`.
 - Comprehensive API docs, module docs, and contributing guide.
 
-[Unreleased]: https://github.com/DeathSurfing/featrs/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/DeathSurfing/featrs/compare/v0.3.1...HEAD
+[0.3.1]: https://github.com/DeathSurfing/featrs/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/DeathSurfing/featrs/releases/tag/v0.3.0
 [0.2.0]: https://github.com/DeathSurfing/featrs/releases/tag/v0.2.0
 [0.1.0]: https://github.com/DeathSurfing/featrs/releases/tag/v0.1.0
