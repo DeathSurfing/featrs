@@ -72,7 +72,7 @@ impl Normalizer {
         match norm {
             Norm::L1 => values.iter().map(|v| v.abs()).sum(),
             Norm::L2 => values.iter().map(|v| v * v).sum::<f64>().sqrt(),
-            Norm::Max => values.iter().cloned().fold(0.0f64, f64::max),
+            Norm::Max => values.iter().map(|v| v.abs()).fold(0.0f64, f64::max),
         }
     }
 }
