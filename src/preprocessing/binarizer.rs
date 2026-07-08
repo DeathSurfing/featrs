@@ -73,7 +73,7 @@ impl Transform<DataFrame> for Binarizer {
         if !self.fitted {
             return Err(Error::NotFitted(
                 "Binarizer has not been fitted. \
-                 Call .fit(dataframe, target) before .transform()."
+                 Call .fit(dataframe) before .transform()."
                     .into(),
             ));
         }

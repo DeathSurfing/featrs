@@ -140,14 +140,14 @@ impl Transform<DataFrame> for OneHotEncoder {
         if !self.fitted {
             return Err(Error::NotFitted(
                 "OneHotEncoder has not been fitted. \
-                 Call .fit(dataframe, target) before .transform()."
+                 Call .fit(dataframe) before .transform()."
                     .into(),
             ));
         }
         let cats = self.categories.as_ref().ok_or_else(|| {
             Error::NotFitted(
                 "OneHotEncoder has not been fitted. \
-                 Call .fit(dataframe, target) before .transform()."
+                 Call .fit(dataframe) before .transform()."
                     .into(),
             )
         })?;
@@ -277,14 +277,14 @@ impl Transform<DataFrame> for LabelEncoder {
         if !self.fitted {
             return Err(Error::NotFitted(
                 "LabelEncoder has not been fitted. \
-                 Call .fit(dataframe, target) before .transform()."
+                 Call .fit(dataframe) before .transform()."
                     .into(),
             ));
         }
         let mapping = self.mapping.as_ref().ok_or_else(|| {
             Error::NotFitted(
                 "LabelEncoder has not been fitted. \
-                 Call .fit(dataframe, target) before .transform()."
+                 Call .fit(dataframe) before .transform()."
                     .into(),
             )
         })?;
@@ -403,7 +403,7 @@ impl Transform<DataFrame> for OrdinalEncoder {
         if !self.fitted {
             return Err(Error::NotFitted(
                 "OrdinalEncoder has not been fitted. \
-                 Call .fit(dataframe, target) before .transform()."
+                 Call .fit(dataframe) before .transform()."
                     .into(),
             ));
         }
@@ -412,7 +412,7 @@ impl Transform<DataFrame> for OrdinalEncoder {
         let cats = self.categories.as_ref().ok_or_else(|| {
             Error::NotFitted(
                 "OrdinalEncoder has not been fitted. \
-                 Call .fit(dataframe, target) before .transform()."
+                 Call .fit(dataframe) before .transform()."
                     .into(),
             )
         })?;

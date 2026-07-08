@@ -128,14 +128,14 @@ impl Transform<DataFrame> for VarianceThreshold {
         if !self.fitted {
             return Err(Error::NotFitted(
                 "VarianceThreshold has not been fitted. \
-                 Call .fit(dataframe, target) before .transform()."
+                 Call .fit(dataframe) before .transform()."
                     .into(),
             ));
         }
         let cols = self.selected_columns.as_ref().ok_or_else(|| {
             Error::NotFitted(
                 "VarianceThreshold has not been fitted. \
-                 Call .fit(dataframe, target) before .transform()."
+                 Call .fit(dataframe) before .transform()."
                     .into(),
             )
         })?;

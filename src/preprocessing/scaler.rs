@@ -157,7 +157,7 @@ impl Transform<DataFrame> for StandardScaler {
         if !self.fitted {
             return Err(Error::NotFitted(
                 "StandardScaler has not been fitted. \
-                 Call .fit(dataframe, target) before .transform()."
+                 Call .fit(dataframe) before .transform()."
                     .into(),
             ));
         }
@@ -165,7 +165,7 @@ impl Transform<DataFrame> for StandardScaler {
         let params = self.params.as_ref().ok_or_else(|| {
             Error::NotFitted(
                 "StandardScaler has not been fitted. \
-                 Call .fit(dataframe, target) before .transform()."
+                 Call .fit(dataframe) before .transform()."
                     .into(),
             )
         })?;
@@ -301,7 +301,7 @@ impl Transform<DataFrame> for MinMaxScaler {
         if !self.fitted {
             return Err(Error::NotFitted(
                 "MinMaxScaler has not been fitted. \
-                 Call .fit(dataframe, target) before .transform()."
+                 Call .fit(dataframe) before .transform()."
                     .into(),
             ));
         }
@@ -311,7 +311,7 @@ impl Transform<DataFrame> for MinMaxScaler {
         for p in self.params.as_ref().ok_or_else(|| {
             Error::NotFitted(
                 "MinMaxScaler has not been fitted. \
-                 Call .fit(dataframe, target) before .transform()."
+                 Call .fit(dataframe) before .transform()."
                     .into(),
             )
         })? {
@@ -471,7 +471,7 @@ impl Transform<DataFrame> for RobustScaler {
         if !self.fitted {
             return Err(Error::NotFitted(
                 "RobustScaler has not been fitted. \
-                 Call .fit(dataframe, target) before .transform()."
+                 Call .fit(dataframe) before .transform()."
                     .into(),
             ));
         }
@@ -480,7 +480,7 @@ impl Transform<DataFrame> for RobustScaler {
         for p in self.params.as_ref().ok_or_else(|| {
             Error::NotFitted(
                 "RobustScaler has not been fitted. \
-                 Call .fit(dataframe, target) before .transform()."
+                 Call .fit(dataframe) before .transform()."
                     .into(),
             )
         })? {
