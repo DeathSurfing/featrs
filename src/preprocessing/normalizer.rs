@@ -72,7 +72,7 @@ impl Normalizer {
         match norm {
             Norm::L1 => values.iter().map(|v| v.abs()).sum(),
             Norm::L2 => values.iter().map(|v| v * v).sum::<f64>().sqrt(),
-            Norm::Max => values.iter().cloned().fold(0.0f64, f64::max),
+            Norm::Max => values.iter().map(|v| v.abs()).fold(0.0f64, f64::max),
         }
     }
 }
@@ -217,5 +217,31 @@ mod tests {
         let col_b = result.column("b").unwrap().f64().unwrap();
         assert_relative_eq!(col_a.get(0).unwrap(), 0.75, epsilon = 1e-6);
         assert_relative_eq!(col_b.get(0).unwrap(), 1.0, epsilon = 1e-6);
+    }
+
+    /// `Max` norm must use absolute values; rows containing negatives must
+    /// normalize by `max(|x_i|)` rather than `max(x_i)` (regression test for
+    /// issue #9). The existing `test_max_normalization` only used positive
+    /// values, so the bug was hidden.
+    #[test]
+    fn test_max_normalization_negative_values() {
+        let a = Column::from(Series::new("a".into(), &[-5.0f64, 1.0]));
+        let b = Column::from(Series::new("b".into(), &[3.0f64, 2.0]));
+        let df = DataFrame::new(2, vec![a, b]).unwrap();
+
+        let mut n = Normalizer::max();
+        n.fit(df.clone()).unwrap();
+        let result = n.transform(df).unwrap();
+
+        let col_a = result.column("a").unwrap().f64().unwrap();
+        let col_b = result.column("b").unwrap().f64().unwrap();
+
+        // Row 0 [-5, 3]: norm = max(|-5|, |3|) = 5.0  -> [-1.0, 0.6]
+        assert_relative_eq!(col_a.get(0).unwrap(), -1.0, epsilon = 1e-6);
+        assert_relative_eq!(col_b.get(0).unwrap(), 0.6, epsilon = 1e-6);
+
+        // Row 1 [1, 2]: norm = max(|1|, |2|) = 2.0  -> [0.5, 1.0]
+        assert_relative_eq!(col_a.get(1).unwrap(), 0.5, epsilon = 1e-6);
+        assert_relative_eq!(col_b.get(1).unwrap(), 1.0, epsilon = 1e-6);
     }
 }
