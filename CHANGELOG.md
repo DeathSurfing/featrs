@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.2] - 2026-07-08
+
+### Fixed
+
+- `Normalizer` Max (L∞) norm now uses absolute values (`max(|x_i|)`) instead
+  of `max(x_i)`, correcting the normalized output for any row containing
+  negative values. The existing `test_max_normalization` test only used
+  positive values, so the bug was previously hidden; a regression test
+  covering negative values has been added (#9).
+
 ## [0.3.1] - 2026-07-07
 
 ### Fixed
@@ -104,7 +114,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Pipeline primitives: `Pipeline`, `ColumnTransformer` with `Remainder`.
 - Comprehensive API docs, module docs, and contributing guide.
 
-[Unreleased]: https://github.com/DeathSurfing/featrs/compare/v0.3.1...HEAD
+[Unreleased]: https://github.com/DeathSurfing/featrs/compare/v0.3.2...HEAD
+[0.3.2]: https://github.com/DeathSurfing/featrs/compare/v0.3.1...v0.3.2
 [0.3.1]: https://github.com/DeathSurfing/featrs/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/DeathSurfing/featrs/releases/tag/v0.3.0
 [0.2.0]: https://github.com/DeathSurfing/featrs/releases/tag/v0.2.0
