@@ -153,8 +153,10 @@ impl Fit<DataFrame> for SimpleImputer {
                     for &v in &all_vals {
                         *freq.entry(v.to_bits()).or_default() += 1;
                     }
-                    let (max_key, _) =
-                        freq.into_iter().max_by_key(|&(_, c)| c).ok_or_else(|| {
+                    let (max_key, _) = freq
+                        .into_iter()
+                        .max_by(|a, b| a.1.cmp(&b.1).then_with(|| b.0.cmp(&a.0)))
+                        .ok_or_else(|| {
                             Error::Computation(format!(
                                 "SimpleImputer(MostFrequent): column '{}' has no non-null values",
                                 name
@@ -345,6 +347,41 @@ mod tests {
             .flatten()
             .collect();
         assert_relative_eq!(vals[3], 2.0, epsilon = 1e-6);
+    }
+
+    #[test]
+    fn test_imputer_most_frequent_ties() {
+        // Tied frequencies: 1.0 appears 2×, 2.0 appears 2×, two nulls.
+        // On ties, the smallest value (1.0) must be chosen deterministically.
+        let x = Column::from(Series::new(
+            "x".into(),
+            &[Some(1.0f64), Some(1.0), Some(2.0), Some(2.0), None, None],
+        ));
+        let df = DataFrame::new(6, vec![x]).unwrap();
+        let mut imp = SimpleImputer::most_frequent();
+        imp.fit(df.clone()).unwrap();
+        let result = imp.transform(df.clone()).unwrap();
+        let vals: Vec<f64> = result
+            .column("x")
+            .unwrap()
+            .f64()
+            .unwrap()
+            .iter()
+            .flatten()
+            .collect();
+        assert_eq!(vals[4], 1.0);
+        assert_eq!(vals[5], 1.0);
+        // Run twice to confirm reproducibility
+        let result2 = imp.transform(df).unwrap();
+        let vals2: Vec<f64> = result2
+            .column("x")
+            .unwrap()
+            .f64()
+            .unwrap()
+            .iter()
+            .flatten()
+            .collect();
+        assert_eq!(vals, vals2);
     }
 
     #[test]
