@@ -281,14 +281,14 @@ impl Transform<DataFrame> for PolynomialFeatures {
         if !self.fitted {
             return Err(Error::NotFitted(
                 "PolynomialFeatures has not been fitted. \
-                 Call .fit(dataframe, target) before .transform()."
+                 Call .fit(dataframe) before .transform()."
                     .into(),
             ));
         }
         let input_columns = self.input_columns.as_ref().ok_or_else(|| {
             Error::NotFitted(
                 "PolynomialFeatures has not been fitted. \
-                 Call .fit(dataframe, target) before .transform()."
+                 Call .fit(dataframe) before .transform()."
                     .into(),
             )
         })?;

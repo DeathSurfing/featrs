@@ -183,14 +183,14 @@ impl Transform<DataFrame> for SimpleImputer {
         if !self.fitted {
             return Err(Error::NotFitted(
                 "SimpleImputer has not been fitted. \
-                 Call .fit(dataframe, target) before .transform()."
+                 Call .fit(dataframe) before .transform()."
                     .into(),
             ));
         }
         let fill_values = self.fill_values.as_ref().ok_or_else(|| {
             Error::NotFitted(
                 "SimpleImputer has not been fitted. \
-                 Call .fit(dataframe, target) before .transform()."
+                 Call .fit(dataframe) before .transform()."
                     .into(),
             )
         })?;

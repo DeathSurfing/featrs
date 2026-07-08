@@ -116,7 +116,7 @@ impl Transform<DataFrame> for Normalizer {
         if !self.fitted {
             return Err(Error::NotFitted(
                 "Normalizer has not been fitted. \
-                 Call .fit(dataframe, target) before .transform()."
+                 Call .fit(dataframe) before .transform()."
                     .into(),
             ));
         }
