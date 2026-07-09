@@ -128,12 +128,13 @@ mod tests {
     fn test_missing_indicator_schema_stability() {
         // Fit on data with nulls, transform on data without nulls.
         // Output should always include indicator columns.
-        let with_nulls =
-            Column::from(Series::new("x".into(), &[Some(1.0f64), None, Some(3.0)]));
+        let with_nulls = Column::from(Series::new("x".into(), &[Some(1.0f64), None, Some(3.0)]));
         let df_nulls = DataFrame::new(3, vec![with_nulls]).unwrap();
 
-        let without_nulls =
-            Column::from(Series::new("x".into(), &[Some(4.0f64), Some(5.0), Some(6.0)]));
+        let without_nulls = Column::from(Series::new(
+            "x".into(),
+            &[Some(4.0f64), Some(5.0), Some(6.0)],
+        ));
         let df_no_nulls = DataFrame::new(3, vec![without_nulls]).unwrap();
 
         let mut ind = MissingIndicator::new(&["x"]);
