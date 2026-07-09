@@ -1,0 +1,35 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  release:
+    name: Create GitHub Release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Extract changelog entry
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          if grep -q "^## \\[${VERSION}\\]" CHANGELOG.md; then
+            awk -v ver="$VERSION" '
+              $0 ~ "^## \\[" ver "\\]" { flag=1; next }
+              flag && /^## \[/ { exit }
+              flag
+            ' CHANGELOG.md > /tmp/release-notes.md
+          else
+            : > /tmp/release-notes.md
+          fi
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          body_path: /tmp/release-notes.md
+          generate_release_notes: true
