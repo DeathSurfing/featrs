@@ -204,6 +204,13 @@ impl FitSupervised<DataFrame, DataFrame> for SelectKBest {
                 "SelectKBest.fit received a DataFrame with 0 columns.".into(),
             ));
         }
+        if self.k == 0 {
+            return Err(Error::InvalidInput(
+                "SelectKBest: k must be greater than 0, got 0. \n\
+                 Choose k >= 1 to select at least one feature."
+                    .into(),
+            ));
+        }
         if y.width() != 1 {
             return Err(Error::InvalidInput(format!(
                 "SelectKBest.fit: target must have exactly 1 column but got {} columns. \
@@ -310,5 +317,19 @@ mod tests {
 
         let scores = f.score(&features, &y_col).unwrap();
         assert_eq!(scores.len(), 2);
+    }
+
+    #[test]
+    fn test_select_kbest_k_zero_rejected() {
+        let mut skb = SelectKBest::new(0, Box::new(FClassif::new()));
+        let features = make_features();
+        let y = DataFrame::new(6, vec![make_target_col()]).unwrap();
+        let result = skb.fit(features, y);
+        assert!(result.is_err(), "k=0 should be rejected at fit time");
+        let err = result.unwrap_err();
+        assert!(
+            err.to_string().contains("k must be greater than 0"),
+            "error message should mention k"
+        );
     }
 }
