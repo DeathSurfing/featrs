@@ -207,7 +207,8 @@ impl FitSupervised<DataFrame, DataFrame> for SelectKBest {
         if self.k == 0 {
             return Err(Error::InvalidInput(
                 "SelectKBest: k must be greater than 0, got 0. \n\
-                 Choose k >= 1 to select at least one feature.".into(),
+                 Choose k >= 1 to select at least one feature."
+                    .into(),
             ));
         }
         if y.width() != 1 {
@@ -326,6 +327,9 @@ mod tests {
         let result = skb.fit(features, y);
         assert!(result.is_err(), "k=0 should be rejected at fit time");
         let err = result.unwrap_err();
-        assert!(err.to_string().contains("k must be greater than 0"), "error message should mention k");
+        assert!(
+            err.to_string().contains("k must be greater than 0"),
+            "error message should mention k"
+        );
     }
 }
