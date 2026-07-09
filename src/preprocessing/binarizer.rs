@@ -45,6 +45,7 @@ impl Binarizer {
 }
 
 impl Default for Binarizer {
+    /// Create a `Binarizer` with a default threshold of `0.0`.
     fn default() -> Self {
         Self::new(0.0)
     }
@@ -53,6 +54,8 @@ impl Default for Binarizer {
 impl Fit<DataFrame> for Binarizer {
     type Output = ();
 
+    /// Fit the binarizer by validating the input DataFrame has
+    /// at least one row and one column.
     fn fit(&mut self, x: DataFrame) -> Result<()> {
         if x.height() == 0 || x.width() == 0 {
             return Err(Error::InvalidInput(
@@ -69,6 +72,8 @@ impl Fit<DataFrame> for Binarizer {
 impl Transform<DataFrame> for Binarizer {
     type Output = DataFrame;
 
+    /// Binarize the data: values above the threshold become `1.0`,
+    /// others become `0.0`.
     fn transform(&self, x: DataFrame) -> Result<DataFrame> {
         if !self.fitted {
             return Err(Error::NotFitted(
