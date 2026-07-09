@@ -15,6 +15,17 @@ pub trait ScoreFunction: Send + Sync {
     ///
     /// Returns a list of `(column_name, score)` pairs for numeric columns.
     fn score(&self, x: &DataFrame, y: &Column) -> Result<Vec<(String, f64)>>;
+
+    #[test]
+    fn test_select_kbest_k_zero_rejected() {
+        let mut skb = SelectKBest::new(0, Box::new(FClassif::new()));
+        let features = make_features();
+        let y = DataFrame::new(6, vec![make_target_col()]).unwrap();
+        let result = skb.fit(features, y);
+        assert!(result.is_err(), "k=0 should be rejected at fit time");
+        let err = result.unwrap_err();
+        assert!(err.to_string().contains("k must be greater than 0"), "error message should mention k");
+    }
 }
 
 /// ANOVA F-value scoring function.
@@ -37,11 +48,33 @@ impl FClassif {
     pub fn new() -> Self {
         Self
     }
+
+    #[test]
+    fn test_select_kbest_k_zero_rejected() {
+        let mut skb = SelectKBest::new(0, Box::new(FClassif::new()));
+        let features = make_features();
+        let y = DataFrame::new(6, vec![make_target_col()]).unwrap();
+        let result = skb.fit(features, y);
+        assert!(result.is_err(), "k=0 should be rejected at fit time");
+        let err = result.unwrap_err();
+        assert!(err.to_string().contains("k must be greater than 0"), "error message should mention k");
+    }
 }
 
 impl Default for FClassif {
     fn default() -> Self {
         Self::new()
+    }
+
+    #[test]
+    fn test_select_kbest_k_zero_rejected() {
+        let mut skb = SelectKBest::new(0, Box::new(FClassif::new()));
+        let features = make_features();
+        let y = DataFrame::new(6, vec![make_target_col()]).unwrap();
+        let result = skb.fit(features, y);
+        assert!(result.is_err(), "k=0 should be rejected at fit time");
+        let err = result.unwrap_err();
+        assert!(err.to_string().contains("k must be greater than 0"), "error message should mention k");
     }
 }
 
@@ -134,6 +167,17 @@ impl ScoreFunction for FClassif {
 
         Ok(scores)
     }
+
+    #[test]
+    fn test_select_kbest_k_zero_rejected() {
+        let mut skb = SelectKBest::new(0, Box::new(FClassif::new()));
+        let features = make_features();
+        let y = DataFrame::new(6, vec![make_target_col()]).unwrap();
+        let result = skb.fit(features, y);
+        assert!(result.is_err(), "k=0 should be rejected at fit time");
+        let err = result.unwrap_err();
+        assert!(err.to_string().contains("k must be greater than 0"), "error message should mention k");
+    }
 }
 
 /// Select the top `k` features according to a [`ScoreFunction`].
@@ -170,6 +214,17 @@ pub struct SelectKBest {
     score_fn: Box<dyn ScoreFunction>,
     selected_columns: Option<Vec<String>>,
     scores: Option<Vec<(String, f64)>>,
+
+    #[test]
+    fn test_select_kbest_k_zero_rejected() {
+        let mut skb = SelectKBest::new(0, Box::new(FClassif::new()));
+        let features = make_features();
+        let y = DataFrame::new(6, vec![make_target_col()]).unwrap();
+        let result = skb.fit(features, y);
+        assert!(result.is_err(), "k=0 should be rejected at fit time");
+        let err = result.unwrap_err();
+        assert!(err.to_string().contains("k must be greater than 0"), "error message should mention k");
+    }
 }
 
 impl SelectKBest {
@@ -193,6 +248,17 @@ impl SelectKBest {
     pub fn scores(&self) -> Option<&[(String, f64)]> {
         self.scores.as_deref()
     }
+
+    #[test]
+    fn test_select_kbest_k_zero_rejected() {
+        let mut skb = SelectKBest::new(0, Box::new(FClassif::new()));
+        let features = make_features();
+        let y = DataFrame::new(6, vec![make_target_col()]).unwrap();
+        let result = skb.fit(features, y);
+        assert!(result.is_err(), "k=0 should be rejected at fit time");
+        let err = result.unwrap_err();
+        assert!(err.to_string().contains("k must be greater than 0"), "error message should mention k");
+    }
 }
 
 impl FitSupervised<DataFrame, DataFrame> for SelectKBest {
@@ -202,6 +268,12 @@ impl FitSupervised<DataFrame, DataFrame> for SelectKBest {
         if x.width() == 0 {
             return Err(Error::InvalidInput(
                 "SelectKBest.fit received a DataFrame with 0 columns.".into(),
+            ));
+        }
+        if self.k == 0 {
+            return Err(Error::InvalidInput(
+                "SelectKBest: k must be greater than 0, got 0. \n\
+                 Choose k >= 1 to select at least one feature.".into(),
             ));
         }
         if y.width() != 1 {
@@ -231,6 +303,17 @@ impl FitSupervised<DataFrame, DataFrame> for SelectKBest {
         self.selected_columns = Some(selected);
         self.fitted = true;
         Ok(())
+    }
+
+    #[test]
+    fn test_select_kbest_k_zero_rejected() {
+        let mut skb = SelectKBest::new(0, Box::new(FClassif::new()));
+        let features = make_features();
+        let y = DataFrame::new(6, vec![make_target_col()]).unwrap();
+        let result = skb.fit(features, y);
+        assert!(result.is_err(), "k=0 should be rejected at fit time");
+        let err = result.unwrap_err();
+        assert!(err.to_string().contains("k must be greater than 0"), "error message should mention k");
     }
 }
 
@@ -263,6 +346,17 @@ impl Transform<DataFrame> for SelectKBest {
         let refs: Vec<&str> = cols.iter().map(|s| s.as_str()).collect();
         x.select(refs)
             .map_err(|e| Error::Computation(e.to_string()))
+    }
+
+    #[test]
+    fn test_select_kbest_k_zero_rejected() {
+        let mut skb = SelectKBest::new(0, Box::new(FClassif::new()));
+        let features = make_features();
+        let y = DataFrame::new(6, vec![make_target_col()]).unwrap();
+        let result = skb.fit(features, y);
+        assert!(result.is_err(), "k=0 should be rejected at fit time");
+        let err = result.unwrap_err();
+        assert!(err.to_string().contains("k must be greater than 0"), "error message should mention k");
     }
 }
 
@@ -310,5 +404,16 @@ mod tests {
 
         let scores = f.score(&features, &y_col).unwrap();
         assert_eq!(scores.len(), 2);
+    }
+
+    #[test]
+    fn test_select_kbest_k_zero_rejected() {
+        let mut skb = SelectKBest::new(0, Box::new(FClassif::new()));
+        let features = make_features();
+        let y = DataFrame::new(6, vec![make_target_col()]).unwrap();
+        let result = skb.fit(features, y);
+        assert!(result.is_err(), "k=0 should be rejected at fit time");
+        let err = result.unwrap_err();
+        assert!(err.to_string().contains("k must be greater than 0"), "error message should mention k");
     }
 }
