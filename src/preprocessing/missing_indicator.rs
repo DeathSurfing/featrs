@@ -100,8 +100,6 @@ impl Transform<DataFrame> for MissingIndicator {
                 })?
                 .as_materialized_series()
                 .clone();
-            let has_missing = s.null_count() > 0;
-
             let null_mask = s.is_null();
             let indicator_vals: ChunkedArray<Float64Type> = null_mask
                 .iter()
@@ -109,15 +107,13 @@ impl Transform<DataFrame> for MissingIndicator {
                 .collect();
 
             let ind_name = format!("{}_missing", col);
-            if has_missing {
-                out.with_column(
-                    indicator_vals
-                        .into_series()
-                        .with_name(ind_name.as_str().into())
-                        .into(),
-                )
-                .map_err(|e| Error::Computation(e.to_string()))?;
-            }
+            out.with_column(
+                indicator_vals
+                    .into_series()
+                    .with_name(ind_name.as_str().into())
+                    .into(),
+            )
+            .map_err(|e| Error::Computation(e.to_string()))?;
         }
 
         Ok(out)
@@ -127,6 +123,29 @@ impl Transform<DataFrame> for MissingIndicator {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_missing_indicator_schema_stability() {
+        // Fit on data with nulls, transform on data without nulls.
+        // Output should always include indicator columns.
+        let with_nulls =
+            Column::from(Series::new("x".into(), &[Some(1.0f64), None, Some(3.0)]));
+        let df_nulls = DataFrame::new(3, vec![with_nulls]).unwrap();
+
+        let without_nulls =
+            Column::from(Series::new("x".into(), &[Some(4.0f64), Some(5.0), Some(6.0)]));
+        let df_no_nulls = DataFrame::new(3, vec![without_nulls]).unwrap();
+
+        let mut ind = MissingIndicator::new(&["x"]);
+        ind.fit(df_nulls).unwrap();
+
+        let result = ind.transform(df_no_nulls).unwrap();
+        assert_eq!(result.width(), 2); // x, x_missing
+        let missing = result.column("x_missing").unwrap().f64().unwrap();
+        assert_eq!(missing.get(0).unwrap(), 0.0);
+        assert_eq!(missing.get(1).unwrap(), 0.0);
+        assert_eq!(missing.get(2).unwrap(), 0.0);
+    }
 
     #[test]
     fn test_missing_indicator() {
