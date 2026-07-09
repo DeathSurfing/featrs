@@ -267,9 +267,18 @@ impl Fit<DataFrame> for MinMaxScaler {
                     e
                 ))
             })?;
-            let vals: Vec<f64> = ca.iter().flatten().collect();
-            let col_min = vals.iter().cloned().fold(f64::NAN, f64::min);
-            let col_max = vals.iter().cloned().fold(f64::NAN, f64::max);
+            let vals: Vec<f64> = ca.iter().flatten().filter(|v| !v.is_nan()).collect();
+
+            if vals.is_empty() {
+                return Err(Error::Computation(format!(
+                    "MinMaxScaler: column '{}' has no non-null, non-NaN values. \
+                     Cannot scale an all-null or all-NaN column. Impute first or drop the column.",
+                    name
+                )));
+            }
+
+            let col_min = vals.iter().copied().fold(f64::INFINITY, f64::min);
+            let col_max = vals.iter().copied().fold(f64::NEG_INFINITY, f64::max);
 
             if (col_max - col_min).abs() < f64::EPSILON {
                 return Err(Error::Computation(format!(
@@ -539,6 +548,72 @@ mod tests {
         assert_relative_eq!(vals[0], 0.0, epsilon = 1e-6);
         assert_relative_eq!(vals[1], 0.5, epsilon = 1e-6);
         assert_relative_eq!(vals[2], 1.0, epsilon = 1e-6);
+    }
+
+    /// Regression for #12: an all-null column must error at `fit` time instead
+    /// of silently fitting with NaN parameters and propagating NaN on transform.
+    #[test]
+    fn test_min_max_scaler_all_null_column_error() {
+        let x = Column::from(Series::new("x".into(), &[None::<f64>, None, None]));
+        let df = DataFrame::new(3, vec![x]).unwrap();
+        let mut scaler = MinMaxScaler::new();
+        let fit_result = scaler.fit(df.clone());
+        assert!(
+            fit_result.is_err(),
+            "fitting an all-null column must error, not silently fit NaN params"
+        );
+    }
+
+    /// Regression for #12: an all-NaN column (real `f64::NAN` values, not
+    /// Polars nulls) must also error instead of silently propagating NaN.
+    #[test]
+    fn test_min_max_scaler_all_nan_column_error() {
+        let x = Column::from(Series::new("x".into(), &[f64::NAN, f64::NAN, f64::NAN]));
+        let df = DataFrame::new(3, vec![x]).unwrap();
+        let mut scaler = MinMaxScaler::new();
+        let fit_result = scaler.fit(df.clone());
+        assert!(
+            fit_result.is_err(),
+            "fitting an all-NaN column must error, not silently fit NaN params"
+        );
+    }
+
+    /// Nulls mixed with valid values must keep working: the null position is
+    /// preserved through transform, and valid values scale to the range ends.
+    #[test]
+    fn test_min_max_scaler_partial_null_ok() {
+        let x = Column::from(Series::new("x".into(), &[Some(1.0f64), None, Some(5.0)]));
+        let df = DataFrame::new(3, vec![x]).unwrap();
+        let mut scaler = MinMaxScaler::new();
+        scaler.fit(df.clone()).unwrap();
+        let out = scaler.transform(df).unwrap();
+        let ca = out.column("x").unwrap().f64().unwrap();
+        let vals: Vec<Option<f64>> = ca.iter().collect();
+        assert!(
+            vals[1].is_none(),
+            "null input must stay null through transform"
+        );
+        assert_relative_eq!(vals[0].unwrap(), 0.0, epsilon = 1e-6);
+        assert_relative_eq!(vals[2].unwrap(), 1.0, epsilon = 1e-6);
+    }
+
+    /// `f64::NAN` mixed with valid values must keep working: NaN is ignored for
+    /// fit statistics, and the NaN position maps to NaN on transform.
+    #[test]
+    fn test_min_max_scaler_partial_nan_ok() {
+        let x = Column::from(Series::new("x".into(), &[1.0f64, f64::NAN, 5.0]));
+        let df = DataFrame::new(3, vec![x]).unwrap();
+        let mut scaler = MinMaxScaler::new();
+        scaler.fit(df.clone()).unwrap();
+        let out = scaler.transform(df).unwrap();
+        let ca = out.column("x").unwrap().f64().unwrap();
+        let vals: Vec<Option<f64>> = ca.iter().collect();
+        assert_relative_eq!(vals[0].unwrap(), 0.0, epsilon = 1e-6);
+        assert!(
+            vals[1].unwrap().is_nan(),
+            "NaN input must map to NaN through transform"
+        );
+        assert_relative_eq!(vals[2].unwrap(), 1.0, epsilon = 1e-6);
     }
 
     #[test]
