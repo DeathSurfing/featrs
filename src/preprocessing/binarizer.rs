@@ -54,10 +54,10 @@ impl Fit<DataFrame> for Binarizer {
     type Output = ();
 
     fn fit(&mut self, x: DataFrame) -> Result<()> {
-        if x.width() == 0 {
+        if x.height() == 0 || x.width() == 0 {
             return Err(Error::InvalidInput(
-                "Binarizer.fit received a DataFrame with 0 columns. \
-                 Provide at least one column."
+                "Binarizer.fit received an empty DataFrame (0 rows or 0 columns). \
+                 Provide data with at least 1 row and 1 column."
                     .into(),
             ));
         }
@@ -151,5 +151,23 @@ mod tests {
         assert_relative_eq!(vals[0], 0.0, epsilon = 1e-6);
         assert_relative_eq!(vals[1], 0.0, epsilon = 1e-6);
         assert_relative_eq!(vals[2], 1.0, epsilon = 1e-6);
+    }
+
+    #[test]
+    fn test_binarizer_empty_rows_rejected() {
+        let a = Column::from(Series::new("x".into(), Vec::<f64>::new()));
+        let df = DataFrame::new(0, vec![a]).unwrap();
+
+        let mut b = Binarizer::new(0.5);
+        let result = b.fit(df);
+        assert!(
+            result.is_err(),
+            "a 0-row DataFrame should be rejected at fit time"
+        );
+        let err = result.unwrap_err();
+        assert!(
+            err.to_string().contains("empty DataFrame"),
+            "error message should mention the empty DataFrame"
+        );
     }
 }
