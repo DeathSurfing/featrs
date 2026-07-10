@@ -110,19 +110,22 @@ impl Fit<DataFrame> for StandardScaler {
                 ))
             })?;
 
-            let col_mean = if self.with_mean {
-                _ca.mean().unwrap_or(0.0)
-            } else {
-                0.0
-            };
+            let vals: Vec<f64> = _ca.iter().flatten().filter(|v| !v.is_nan()).collect();
+
+            if vals.is_empty() {
+                return Err(Error::Computation(format!(
+                    "StandardScaler: column '{}' has no non-null, non-NaN values. \
+                     Cannot scale an all-null or all-NaN column. Impute first or drop the column.",
+                    name
+                )));
+            }
+
+            let fitted_mean = vals.iter().sum::<f64>() / vals.len() as f64;
+            let col_mean = if self.with_mean { fitted_mean } else { 0.0 };
 
             let col_std = if self.with_std {
-                let var = _ca
-                    .iter()
-                    .flatten()
-                    .map(|v| (v - col_mean).powi(2))
-                    .sum::<f64>()
-                    / _ca.len() as f64;
+                let var =
+                    vals.iter().map(|v| (v - fitted_mean).powi(2)).sum::<f64>() / vals.len() as f64;
                 var.sqrt()
             } else {
                 1.0
