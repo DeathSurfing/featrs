@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `Lagger.fit` now rejects duplicate periods at fit time, returning a clear
+  `InvalidInput` error instead of silently overwriting lag columns on
+  `transform` (Polars `DataFrame::with_column` replaces same-named columns).
 - `MissingIndicator.transform` now always adds indicator columns, even
   when the transform data has no nulls. Previously the indicator column
   was conditionally omitted, breaking downstream pipeline schema stability
@@ -17,6 +20,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   instead of silently fitting NaN parameters and propagating NaN through
   `transform`. The constant-column guard was bypassed because
   `(NaN).abs() < f64::EPSILON` is `false` per IEEE 754 (#33).
+- `SelectKBest.fit` now validates that `k > 0` at fit time, returning a
+  clear `InvalidInput` error for `k == 0` instead of failing silently or
+  with an opaque downstream error (#44).
+- `Binarizer.fit` now rejects empty DataFrames (0 rows) with an
+  `InvalidInput` error, matching the convention of every other transformer
+  in the crate (#46).
+- `StandardScaler.fit` and `RobustScaler.fit` now filter `f64::NAN` values
+  before computing statistics (mean, variance, median, IQR) instead of
+  silently producing NaN parameters that propagate through `transform`.
+  All-null and all-NaN columns now error at fit time (#35).
 
 ## [0.3.3] - 2026-07-08
 
