@@ -147,9 +147,21 @@ mod tests {
             "duplicate periods should be rejected at fit"
         );
         let err = result.unwrap_err();
+        let payload = match err {
+            Error::InvalidInput(msg) => msg,
+            other => panic!("expected Error::InvalidInput, got {other:?}"),
+        };
         assert!(
-            err.to_string().contains("duplicate period"),
-            "error message should mention 'duplicate period', got: {err}"
+            payload.contains("duplicate period"),
+            "error message should mention 'duplicate period', got: {payload}"
+        );
+        assert!(
+            payload.contains(" 1 ") || payload.contains(" 1,"),
+            "error message should contain the duplicate value '1', got: {payload}"
+        );
+        assert!(
+            payload.contains("[1, 1]"),
+            "error message should contain the full periods list '[1, 1]', got: {payload}"
         );
     }
 }
