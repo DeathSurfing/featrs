@@ -61,11 +61,31 @@ impl Fit<DataFrame> for CyclicalEncoder {
     type Output = ();
 
     fn fit(&mut self, x: DataFrame) -> Result<()> {
+        let n_cols = x.width();
+        if x.height() == 0 || n_cols == 0 {
+            return Err(Error::InvalidInput(
+                "CyclicalEncoder.fit received an empty DataFrame (0 rows or 0 columns). \
+                 Provide data with at least 1 row and 1 column."
+                    .into(),
+            ));
+        }
+        if self.columns.is_empty() {
+            return Err(Error::InvalidInput(
+                "CyclicalEncoder: at least one column is required.".into(),
+            ));
+        }
         for (col, _) in &self.columns {
-            if x.column(col.as_str()).is_err() {
+            let s = x.column(col.as_str()).map_err(|e| {
+                Error::InvalidInput(format!(
+                    "CyclicalEncoder: column '{}' not found. {}",
+                    col, e
+                ))
+            })?;
+            if s.dtype() != &DataType::Float64 {
                 return Err(Error::InvalidInput(format!(
-                    "CyclicalEncoder: column '{}' not found.",
-                    col
+                    "CyclicalEncoder: column '{}' has dtype {}; expected Float64.",
+                    col,
+                    s.dtype()
                 )));
             }
         }
@@ -156,5 +176,25 @@ mod tests {
         // hour 6 (90°): sin=1, cos=0
         assert_relative_eq!(sin.get(1).unwrap(), 1.0, epsilon = 1e-6);
         assert_relative_eq!(cos.get(1).unwrap(), 0.0, epsilon = 1e-6);
+    }
+
+    #[test]
+    fn test_cyclical_fit_validation() {
+        // Test empty DataFrame
+        let df_empty = DataFrame::empty();
+        let mut enc = CyclicalEncoder::new(&["hour"], 24);
+        assert!(enc.fit(df_empty).is_err());
+
+        // Test non-Float64 column type (Int32)
+        let vals = Column::from(Series::new("hour".into(), &[0_i32, 6, 12, 18]));
+        let df_int = DataFrame::new(4, vec![vals]).unwrap();
+        let mut enc = CyclicalEncoder::new(&["hour"], 24);
+        assert!(enc.fit(df_int).is_err());
+
+        // Test missing column
+        let vals = Column::from(Series::new("day".into(), &[1.0_f64, 2.0]));
+        let df_wrong_col = DataFrame::new(2, vec![vals]).unwrap();
+        let mut enc = CyclicalEncoder::new(&["hour"], 24);
+        assert!(enc.fit(df_wrong_col).is_err());
     }
 }

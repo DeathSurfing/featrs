@@ -69,10 +69,11 @@ impl Normalizer {
     }
 
     fn row_norm(values: &[f64], norm: Norm) -> f64 {
+        let clean_vals = values.iter().copied().filter(|v| !v.is_nan());
         match norm {
-            Norm::L1 => values.iter().map(|v| v.abs()).sum(),
-            Norm::L2 => values.iter().map(|v| v * v).sum::<f64>().sqrt(),
-            Norm::Max => values.iter().map(|v| v.abs()).fold(0.0f64, f64::max),
+            Norm::L1 => clean_vals.map(|v| v.abs()).sum(),
+            Norm::L2 => clean_vals.map(|v| v * v).sum::<f64>().sqrt(),
+            Norm::Max => clean_vals.map(|v| v.abs()).fold(0.0f64, f64::max),
         }
     }
 }
@@ -125,7 +126,7 @@ impl Transform<DataFrame> for Normalizer {
         let n_rows = x.height();
         let col_names: Vec<&str> = x.get_column_names().iter().map(|s| s.as_str()).collect();
 
-        let mut col_data: Vec<Vec<f64>> = Vec::with_capacity(n_cols);
+        let mut col_data: Vec<Vec<Option<f64>>> = Vec::with_capacity(n_cols);
         for name in &col_names {
             let s = x.column(name).map_err(|e| {
                 Error::InvalidInput(format!(
@@ -141,24 +142,34 @@ impl Transform<DataFrame> for Normalizer {
                     e
                 ))
             })?;
-            col_data.push(ca.iter().flatten().collect());
+            col_data.push(ca.iter().collect());
         }
 
         for i in 0..n_rows {
-            let row_vals: Vec<f64> = col_data.iter().map(|col| col[i]).collect();
+            let row_vals: Vec<f64> = col_data
+                .iter()
+                .filter_map(|col| col[i])
+                .collect();
             let norm = Self::row_norm(&row_vals, self.norm);
             if norm > f64::EPSILON {
                 for col in &mut col_data {
-                    col[i] /= norm;
+                    if let Some(v) = col[i].as_mut() {
+                        if !v.is_nan() {
+                            *v /= norm;
+                        }
+                    }
                 }
             }
         }
 
         let mut out_cols: Vec<Column> = Vec::with_capacity(n_cols);
         for (j, name) in col_names.iter().enumerate() {
-            let new_ca: ChunkedArray<Float64Type> =
-                ChunkedArray::from_slice(name.to_string().as_str().into(), &col_data[j]);
-            out_cols.push(new_ca.into_series().into());
+            let new_ca: ChunkedArray<Float64Type> = col_data[j]
+                .iter()
+                .copied()
+                .collect();
+            let s = new_ca.into_series().with_name(name.to_string().as_str().into());
+            out_cols.push(s.into());
         }
 
         DataFrame::new(n_rows, out_cols).map_err(|e| Error::Computation(e.to_string()))
@@ -243,5 +254,31 @@ mod tests {
         // Row 1 [1, 2]: norm = max(|1|, |2|) = 2.0  -> [0.5, 1.0]
         assert_relative_eq!(col_a.get(1).unwrap(), 0.5, epsilon = 1e-6);
         assert_relative_eq!(col_b.get(1).unwrap(), 1.0, epsilon = 1e-6);
+    }
+
+    #[test]
+    fn test_normalizer_with_null_and_nan() {
+        // Row 0: [3.0, 4.0] -> norm L2 is 5.0 -> [0.6, 0.8]
+        // Row 1: [null, 6.0] -> norm L2 is 6.0 -> [null, 1.0]
+        // Row 2: [5.0, NaN] -> norm L2 is 5.0 -> [1.0, NaN]
+        let a = Column::from(Series::new("a".into(), &[Some(3.0f64), None, Some(5.0)]));
+        let b = Column::from(Series::new("b".into(), &[Some(4.0f64), Some(6.0), Some(f64::NAN)]));
+        let df = DataFrame::new(3, vec![a, b]).unwrap();
+
+        let mut n = Normalizer::l2();
+        n.fit(df.clone()).unwrap();
+        let result = n.transform(df).unwrap();
+
+        let col_a = result.column("a").unwrap().f64().unwrap();
+        let col_b = result.column("b").unwrap().f64().unwrap();
+
+        assert_relative_eq!(col_a.get(0).unwrap(), 0.6, epsilon = 1e-6);
+        assert_relative_eq!(col_b.get(0).unwrap(), 0.8, epsilon = 1e-6);
+
+        assert!(col_a.get(1).is_none());
+        assert_relative_eq!(col_b.get(1).unwrap(), 1.0, epsilon = 1e-6);
+
+        assert_relative_eq!(col_a.get(2).unwrap(), 1.0, epsilon = 1e-6);
+        assert!(col_b.get(2).unwrap().is_nan());
     }
 }
