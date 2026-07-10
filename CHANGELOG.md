@@ -23,6 +23,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `Binarizer.fit` now rejects empty DataFrames (0 rows) with an
   `InvalidInput` error, matching the convention of every other transformer
   in the crate (#46).
+- `StandardScaler.fit` and `RobustScaler.fit` now filter `f64::NAN` values
+  before computing statistics (mean, variance, median, IQR) instead of
+  silently producing NaN parameters that propagate through `transform`.
+  All-null and all-NaN columns now error at fit time (#35).
 
 ## [0.3.3] - 2026-07-08
 
