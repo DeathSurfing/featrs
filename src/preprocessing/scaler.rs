@@ -110,19 +110,22 @@ impl Fit<DataFrame> for StandardScaler {
                 ))
             })?;
 
-            let col_mean = if self.with_mean {
-                _ca.mean().unwrap_or(0.0)
-            } else {
-                0.0
-            };
+            let vals: Vec<f64> = _ca.iter().flatten().filter(|v| v.is_finite()).collect();
+
+            if vals.is_empty() {
+                return Err(Error::Computation(format!(
+                    "StandardScaler: column '{}' has no non-null, finite values. \
+                     Cannot scale an all-null or all-NaN column. Impute first or drop the column.",
+                    name
+                )));
+            }
+
+            let fitted_mean = vals.iter().sum::<f64>() / vals.len() as f64;
+            let col_mean = if self.with_mean { fitted_mean } else { 0.0 };
 
             let col_std = if self.with_std {
-                let var = _ca
-                    .iter()
-                    .flatten()
-                    .map(|v| (v - col_mean).powi(2))
-                    .sum::<f64>()
-                    / _ca.len() as f64;
+                let var =
+                    vals.iter().map(|v| (v - fitted_mean).powi(2)).sum::<f64>() / vals.len() as f64;
                 var.sqrt()
             } else {
                 1.0
@@ -444,7 +447,16 @@ impl Fit<DataFrame> for RobustScaler {
                     e
                 ))
             })?;
-            let mut vals: Vec<f64> = ca.iter().flatten().collect();
+            let mut vals: Vec<f64> = ca.iter().flatten().filter(|v| v.is_finite()).collect();
+
+            if vals.is_empty() {
+                return Err(Error::Computation(format!(
+                    "RobustScaler: column '{}' has no non-null, finite values. \
+                     Cannot scale an all-null or all-NaN column. Impute first or drop the column.",
+                    name
+                )));
+            }
+
             vals.sort_by(|a, b| a.total_cmp(b));
 
             let median = percentile_sorted(&vals, 50.0);
@@ -655,5 +667,115 @@ mod tests {
         // fit must not panic on the NaN-bearing sort.
         scaler.fit(df.clone()).unwrap();
         let _ = scaler.transform(df).unwrap();
+    }
+
+    /// Regression for #35: an all-null column must error at `fit` time instead
+    /// of silently fitting with NaN parameters.
+    #[test]
+    fn test_standard_scaler_all_null_column_error() {
+        let x = Column::from(Series::new("x".into(), &[None::<f64>, None, None]));
+        let df = DataFrame::new(3, vec![x]).unwrap();
+        let mut scaler = StandardScaler::new();
+        let fit_result = scaler.fit(df.clone());
+        assert!(
+            fit_result.is_err(),
+            "fitting an all-null column must error, not silently fit NaN params"
+        );
+    }
+
+    /// Regression for #35: an all-NaN column must error at `fit` time.
+    #[test]
+    fn test_standard_scaler_all_nan_column_error() {
+        let x = Column::from(Series::new("x".into(), &[f64::NAN, f64::NAN, f64::NAN]));
+        let df = DataFrame::new(3, vec![x]).unwrap();
+        let mut scaler = StandardScaler::new();
+        let fit_result = scaler.fit(df.clone());
+        assert!(
+            fit_result.is_err(),
+            "fitting an all-NaN column must error, not silently fit NaN params"
+        );
+    }
+
+    /// Nulls mixed with valid values must keep working: the null position is
+    /// preserved through transform, and valid values scale correctly.
+    #[test]
+    fn test_standard_scaler_partial_null_ok() {
+        let x = Column::from(Series::new("x".into(), &[Some(1.0f64), None, Some(5.0)]));
+        let df = DataFrame::new(3, vec![x]).unwrap();
+        let mut scaler = StandardScaler::new();
+        scaler.fit(df.clone()).unwrap();
+        let out = scaler.transform(df).unwrap();
+        let ca = out.column("x").unwrap().f64().unwrap();
+        let vals: Vec<Option<f64>> = ca.iter().collect();
+        assert!(
+            vals[1].is_none(),
+            "null input must stay null through transform"
+        );
+        assert_relative_eq!(vals[0].unwrap(), -1.0, epsilon = 1e-6);
+        assert_relative_eq!(vals[2].unwrap(), 1.0, epsilon = 1e-6);
+    }
+
+    /// `f64::NAN` mixed with valid values must keep working: NaN is ignored for
+    /// fit statistics, and the NaN position maps to NaN on transform.
+    #[test]
+    fn test_standard_scaler_partial_nan_ok() {
+        let x = Column::from(Series::new("x".into(), &[1.0f64, f64::NAN, 5.0]));
+        let df = DataFrame::new(3, vec![x]).unwrap();
+        let mut scaler = StandardScaler::new();
+        scaler.fit(df.clone()).unwrap();
+        let out = scaler.transform(df).unwrap();
+        let ca = out.column("x").unwrap().f64().unwrap();
+        let vals: Vec<Option<f64>> = ca.iter().collect();
+        assert_relative_eq!(vals[0].unwrap(), -1.0, epsilon = 1e-6);
+        assert!(
+            vals[1].unwrap().is_nan(),
+            "NaN input must map to NaN through transform"
+        );
+        assert_relative_eq!(vals[2].unwrap(), 1.0, epsilon = 1e-6);
+    }
+
+    /// Regression for #35: an all-null column must error at `fit` time.
+    #[test]
+    fn test_robust_scaler_all_null_column_error() {
+        let x = Column::from(Series::new("x".into(), &[None::<f64>, None, None]));
+        let df = DataFrame::new(3, vec![x]).unwrap();
+        let mut scaler = RobustScaler::new();
+        let fit_result = scaler.fit(df.clone());
+        assert!(
+            fit_result.is_err(),
+            "fitting an all-null column must error, not silently fit NaN params"
+        );
+    }
+
+    /// Regression for #35: an all-NaN column must error at `fit` time.
+    #[test]
+    fn test_robust_scaler_all_nan_column_error() {
+        let x = Column::from(Series::new("x".into(), &[f64::NAN, f64::NAN, f64::NAN]));
+        let df = DataFrame::new(3, vec![x]).unwrap();
+        let mut scaler = RobustScaler::new();
+        let fit_result = scaler.fit(df.clone());
+        assert!(
+            fit_result.is_err(),
+            "fitting an all-NaN column must error, not silently fit NaN params"
+        );
+    }
+
+    /// `f64::NAN` mixed with valid values must keep working: NaN is ignored for
+    /// fit statistics, and the NaN position maps to NaN on transform.
+    #[test]
+    fn test_robust_scaler_partial_nan_ok() {
+        let x = Column::from(Series::new("x".into(), &[1.0f64, f64::NAN, 5.0]));
+        let df = DataFrame::new(3, vec![x]).unwrap();
+        let mut scaler = RobustScaler::new();
+        scaler.fit(df.clone()).unwrap();
+        let out = scaler.transform(df).unwrap();
+        let ca = out.column("x").unwrap().f64().unwrap();
+        let vals: Vec<Option<f64>> = ca.iter().collect();
+        assert_relative_eq!(vals[0].unwrap(), -1.0, epsilon = 1e-6);
+        assert!(
+            vals[1].unwrap().is_nan(),
+            "NaN input must map to NaN through transform"
+        );
+        assert_relative_eq!(vals[2].unwrap(), 1.0, epsilon = 1e-6);
     }
 }
