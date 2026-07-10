@@ -17,6 +17,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   instead of silently fitting NaN parameters and propagating NaN through
   `transform`. The constant-column guard was bypassed because
   `(NaN).abs() < f64::EPSILON` is `false` per IEEE 754 (#33).
+- `StandardScaler.fit` and `RobustScaler.fit` now filter `f64::NAN` values
+  before computing statistics (mean, variance, median, IQR) instead of
+  silently producing NaN parameters that propagate through `transform`.
+  All-null and all-NaN columns now error at fit time (#35).
 
 ## [0.3.3] - 2026-07-08
 
