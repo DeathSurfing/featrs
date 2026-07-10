@@ -5,6 +5,7 @@
 
 use crate::traits::{Error, Fit, Result, Transform};
 use polars::prelude::*;
+use std::collections::HashSet;
 
 /// Create lag features by shifting columns.
 ///
@@ -73,6 +74,16 @@ impl Fit<DataFrame> for Lagger {
                 )));
             }
         }
+        let mut seen: HashSet<i64> = HashSet::new();
+        for &p in &self.periods {
+            if !seen.insert(p) {
+                return Err(Error::InvalidInput(format!(
+                    "Lagger: duplicate period {} in periods {:?}. \
+                     Each lag period must be unique.",
+                    p, self.periods
+                )));
+            }
+        }
         self.fitted = true;
         Ok(())
     }
@@ -122,5 +133,23 @@ mod tests {
 
         assert_eq!(result.width(), 3); // x, x_lag_1, x_lag_2
         assert_eq!(result.height(), 5);
+    }
+
+    #[test]
+    fn test_lagger_duplicate_periods_rejected() {
+        let vals = Column::from(Series::new("x".into(), &[1.0f64, 2.0, 3.0, 4.0, 5.0]));
+        let df = DataFrame::new(5, vec![vals]).unwrap();
+        let mut lagger = Lagger::new(&["x"], &[1, 1]);
+
+        let result = lagger.fit(df);
+        assert!(
+            result.is_err(),
+            "duplicate periods should be rejected at fit"
+        );
+        let err = result.unwrap_err();
+        assert!(
+            err.to_string().contains("duplicate period"),
+            "error message should mention 'duplicate period', got: {err}"
+        );
     }
 }

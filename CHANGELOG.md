@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `Lagger.fit` now rejects duplicate periods at fit time, returning a clear
+  `InvalidInput` error instead of silently overwriting lag columns on
+  `transform` (Polars `DataFrame::with_column` replaces same-named columns).
 - `MissingIndicator.transform` now always adds indicator columns, even
   when the transform data has no nulls. Previously the indicator column
   was conditionally omitted, breaking downstream pipeline schema stability
