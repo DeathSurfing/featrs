@@ -110,11 +110,11 @@ impl Fit<DataFrame> for StandardScaler {
                 ))
             })?;
 
-            let vals: Vec<f64> = _ca.iter().flatten().filter(|v| !v.is_nan()).collect();
+            let vals: Vec<f64> = _ca.iter().flatten().filter(|v| v.is_finite()).collect();
 
             if vals.is_empty() {
                 return Err(Error::Computation(format!(
-                    "StandardScaler: column '{}' has no non-null, non-NaN values. \
+                    "StandardScaler: column '{}' has no non-null, finite values. \
                      Cannot scale an all-null or all-NaN column. Impute first or drop the column.",
                     name
                 )));
@@ -447,11 +447,11 @@ impl Fit<DataFrame> for RobustScaler {
                     e
                 ))
             })?;
-            let mut vals: Vec<f64> = ca.iter().flatten().filter(|v| !v.is_nan()).collect();
+            let mut vals: Vec<f64> = ca.iter().flatten().filter(|v| v.is_finite()).collect();
 
             if vals.is_empty() {
                 return Err(Error::Computation(format!(
-                    "RobustScaler: column '{}' has no non-null, non-NaN values. \
+                    "RobustScaler: column '{}' has no non-null, finite values. \
                      Cannot scale an all-null or all-NaN column. Impute first or drop the column.",
                     name
                 )));
