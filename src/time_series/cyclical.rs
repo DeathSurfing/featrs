@@ -183,18 +183,44 @@ mod tests {
         // Test empty DataFrame
         let df_empty = DataFrame::empty();
         let mut enc = CyclicalEncoder::new(&["hour"], 24);
-        assert!(enc.fit(df_empty).is_err());
+        let err = enc.fit(df_empty).unwrap_err();
+        assert!(
+            matches!(err, Error::InvalidInput(ref msg) if msg.contains("received an empty DataFrame")),
+            "Expected Error::InvalidInput containing 'received an empty DataFrame', got: {:?}",
+            err
+        );
 
         // Test non-Float64 column type (Int32)
         let vals = Column::from(Series::new("hour".into(), &[0_i32, 6, 12, 18]));
         let df_int = DataFrame::new(4, vec![vals]).unwrap();
         let mut enc = CyclicalEncoder::new(&["hour"], 24);
-        assert!(enc.fit(df_int).is_err());
+        let err = enc.fit(df_int).unwrap_err();
+        assert!(
+            matches!(err, Error::InvalidInput(ref msg) if msg.contains("expected Float64")),
+            "Expected Error::InvalidInput containing 'expected Float64', got: {:?}",
+            err
+        );
 
         // Test missing column
         let vals = Column::from(Series::new("day".into(), &[1.0_f64, 2.0]));
         let df_wrong_col = DataFrame::new(2, vec![vals]).unwrap();
         let mut enc = CyclicalEncoder::new(&["hour"], 24);
-        assert!(enc.fit(df_wrong_col).is_err());
+        let err = enc.fit(df_wrong_col).unwrap_err();
+        assert!(
+            matches!(err, Error::InvalidInput(ref msg) if msg.contains("column 'hour' not found")),
+            "Expected Error::InvalidInput containing 'column 'hour' not found', got: {:?}",
+            err
+        );
+
+        // Test empty columns list regression test
+        let vals = Column::from(Series::new("hour".into(), &[0.0_f64, 6.0]));
+        let df = DataFrame::new(2, vec![vals]).unwrap();
+        let mut enc = CyclicalEncoder::new(&[], 24);
+        let err = enc.fit(df).unwrap_err();
+        assert!(
+            matches!(err, Error::InvalidInput(ref msg) if msg.contains("at least one column is required")),
+            "Expected Error::InvalidInput containing 'at least one column is required', got: {:?}",
+            err
+        );
     }
 }
