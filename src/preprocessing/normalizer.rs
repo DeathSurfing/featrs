@@ -146,10 +146,7 @@ impl Transform<DataFrame> for Normalizer {
         }
 
         for i in 0..n_rows {
-            let row_vals: Vec<f64> = col_data
-                .iter()
-                .filter_map(|col| col[i])
-                .collect();
+            let row_vals: Vec<f64> = col_data.iter().filter_map(|col| col[i]).collect();
             let norm = Self::row_norm(&row_vals, self.norm);
             if norm > f64::EPSILON {
                 for col in &mut col_data {
@@ -164,11 +161,10 @@ impl Transform<DataFrame> for Normalizer {
 
         let mut out_cols: Vec<Column> = Vec::with_capacity(n_cols);
         for (j, name) in col_names.iter().enumerate() {
-            let new_ca: ChunkedArray<Float64Type> = col_data[j]
-                .iter()
-                .copied()
-                .collect();
-            let s = new_ca.into_series().with_name(name.to_string().as_str().into());
+            let new_ca: ChunkedArray<Float64Type> = col_data[j].iter().copied().collect();
+            let s = new_ca
+                .into_series()
+                .with_name(name.to_string().as_str().into());
             out_cols.push(s.into());
         }
 
@@ -262,7 +258,10 @@ mod tests {
         // Row 1: [null, 6.0] -> norm L2 is 6.0 -> [null, 1.0]
         // Row 2: [5.0, NaN] -> norm L2 is 5.0 -> [1.0, NaN]
         let a = Column::from(Series::new("a".into(), &[Some(3.0f64), None, Some(5.0)]));
-        let b = Column::from(Series::new("b".into(), &[Some(4.0f64), Some(6.0), Some(f64::NAN)]));
+        let b = Column::from(Series::new(
+            "b".into(),
+            &[Some(4.0f64), Some(6.0), Some(f64::NAN)],
+        ));
         let df = DataFrame::new(3, vec![a, b]).unwrap();
 
         let mut n = Normalizer::l2();

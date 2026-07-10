@@ -186,7 +186,10 @@ mod tests {
         // Col 'a': [1.0, null, NaN, 5.0]. Non-null/non-nan: [1.0, 5.0].
         // Mean = 3.0. Variance = ((1-3)^2 + (5-3)^2)/2 = 4.0.
         // Col 'b': [2.0, 2.0, 2.0, 2.0]. Variance = 0.0.
-        let a = Column::from(Series::new("a".into(), &[Some(1.0f64), None, Some(f64::NAN), Some(5.0)]));
+        let a = Column::from(Series::new(
+            "a".into(),
+            &[Some(1.0f64), None, Some(f64::NAN), Some(5.0)],
+        ));
         let b = Column::from(Series::new("b".into(), &[2.0f64, 2.0, 2.0, 2.0]));
         let df = DataFrame::new(4, vec![a, b]).unwrap();
 
