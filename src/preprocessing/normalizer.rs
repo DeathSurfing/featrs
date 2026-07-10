@@ -153,10 +153,10 @@ impl Transform<DataFrame> for Normalizer {
             let norm = Self::row_norm(&row_vals, self.norm);
             if norm > f64::EPSILON {
                 for col in &mut col_data {
-                    if let Some(v) = col[i].as_mut() {
-                        if !v.is_nan() {
-                            *v /= norm;
-                        }
+                    if let Some(v) = col[i].as_mut()
+                        && !v.is_nan()
+                    {
+                        *v /= norm;
                     }
                 }
             }
