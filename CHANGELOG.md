@@ -17,6 +17,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   instead of silently fitting NaN parameters and propagating NaN through
   `transform`. The constant-column guard was bypassed because
   `(NaN).abs() < f64::EPSILON` is `false` per IEEE 754 (#33).
+- `SelectKBest.fit` now validates that `k > 0` at fit time, returning a
+  clear `InvalidInput` error for `k == 0` instead of failing silently or
+  with an opaque downstream error (#44).
+- `Binarizer.fit` now rejects empty DataFrames (0 rows) with an
+  `InvalidInput` error, matching the convention of every other transformer
+  in the crate (#46).
 
 ## [0.3.3] - 2026-07-08
 
