@@ -5,48 +5,8 @@
 //! `sklearn.preprocessing.PolynomialFeatures`.
 
 use crate::traits::{Error, Fit, Result, Transform};
-use crate::util::require_f64_columns;
+use crate::util::{require_f64_columns, series_mul, series_pow};
 use polars::prelude::*;
-
-fn series_pow(s: &Series, exp: usize) -> Result<Series> {
-    let ca = s.f64().map_err(|e| {
-        Error::Computation(format!(
-            "PolynomialFeatures: expected f64 series for column '{}'. {}",
-            s.name(),
-            e
-        ))
-    })?;
-    let exp_f64 = exp as f64;
-    let result: ChunkedArray<Float64Type> =
-        ca.iter().map(|opt| opt.map(|v| v.powf(exp_f64))).collect();
-    Ok(result.into_series())
-}
-
-fn series_mul(a: &Series, b: &Series) -> Result<Series> {
-    let ca_a = a.f64().map_err(|e| {
-        Error::Computation(format!(
-            "PolynomialFeatures: expected f64 series for column '{}'. {}",
-            a.name(),
-            e
-        ))
-    })?;
-    let ca_b = b.f64().map_err(|e| {
-        Error::Computation(format!(
-            "PolynomialFeatures: expected f64 series for column '{}'. {}",
-            b.name(),
-            e
-        ))
-    })?;
-    let result: ChunkedArray<Float64Type> = ca_a
-        .iter()
-        .zip(ca_b.iter())
-        .map(|(opt_a, opt_b)| match (opt_a, opt_b) {
-            (Some(va), Some(vb)) => Some(va * vb),
-            _ => None,
-        })
-        .collect();
-    Ok(result.into_series())
-}
 
 /// Generate polynomial and interaction features.
 ///
@@ -327,7 +287,7 @@ impl Transform<DataFrame> for PolynomialFeatures {
 
                 if !has_terms {
                     series_vec = Some(if p > 1 {
-                        series_pow(&orig_series, p)?
+                        series_pow(&orig_series, p, "PolynomialFeatures")?
                     } else {
                         orig_series
                     });
@@ -335,7 +295,7 @@ impl Transform<DataFrame> for PolynomialFeatures {
                     has_terms = true;
                 } else {
                     let powered = if p > 1 {
-                        series_pow(&orig_series, p)?
+                        series_pow(&orig_series, p, "PolynomialFeatures")?
                     } else {
                         orig_series
                     };
@@ -345,7 +305,7 @@ impl Transform<DataFrame> for PolynomialFeatures {
                                 .into(),
                         )
                     })?;
-                    series_vec = Some(series_mul(prev, &powered)?);
+                    series_vec = Some(series_mul(prev, &powered, "PolynomialFeatures")?);
                     col_name.push('_');
                     col_name.push_str(name);
                 }

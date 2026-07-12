@@ -67,6 +67,8 @@ pub mod prelude {
     pub use crate::preprocessing::feature_hasher::FeatureHasher;
     pub use crate::preprocessing::imputer::SimpleImputer;
     pub use crate::preprocessing::imputer::Strategy;
+    pub use crate::preprocessing::interaction_features::InteractionFeatures;
+    pub use crate::preprocessing::interaction_features::InteractionFeaturesBuilder;
     pub use crate::preprocessing::missing_indicator::MissingIndicator;
     pub use crate::preprocessing::normalizer::Norm;
     pub use crate::preprocessing::normalizer::Normalizer;
