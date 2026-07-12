@@ -4,7 +4,7 @@
 //! to `sin` and `cos` components so that `23:00` and `01:00` are close
 //! in the encoded space.
 
-use crate::traits::{Error, Fit, Result, Transform};
+use crate::traits::{Error, Fit, FitLazy, Result, Transform, TransformLazy};
 use polars::prelude::*;
 
 /// Encode cyclical features with sin/cos transformation.
@@ -151,6 +151,9 @@ impl Transform<DataFrame> for CyclicalEncoder {
         Ok(out)
     }
 }
+
+impl FitLazy for CyclicalEncoder {}
+impl TransformLazy for CyclicalEncoder {}
 
 #[cfg(test)]
 mod tests {

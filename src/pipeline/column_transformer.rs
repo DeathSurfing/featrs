@@ -5,7 +5,7 @@
 //! [`DataFrame`].
 
 use crate::pipeline::DataFrameTransformer;
-use crate::traits::{Error, Fit, Result, Transform};
+use crate::traits::{Error, Fit, FitLazy, Result, Transform, TransformLazy};
 use polars::prelude::*;
 use std::collections::HashSet;
 
@@ -181,6 +181,83 @@ impl Transform<DataFrame> for ColumnTransformer {
     }
 }
 
+impl FitLazy for ColumnTransformer {
+    fn fit_lazy(&mut self, mut x: LazyFrame) -> Result<()> {
+        let schema = x
+            .collect_schema()
+            .map_err(|e| Error::Computation(e.to_string()))?;
+        if schema.is_empty() {
+            return Err(Error::InvalidInput(
+                "ColumnTransformer.fit received a LazyFrame with 0 columns.".into(),
+            ));
+        }
+        for (t_name, transformer, columns) in &mut self.transformers {
+            let exprs: Vec<Expr> = columns.iter().map(|c| col(c.as_str())).collect();
+            let subset = x.clone().select(exprs);
+            transformer.fit_lazy(subset).map_err(|e| {
+                Error::Computation(format!(
+                    "ColumnTransformer: transformer '{}' failed during lazy fit: {}",
+                    t_name, e
+                ))
+            })?;
+        }
+        Ok(())
+    }
+}
+
+impl TransformLazy for ColumnTransformer {
+    fn transform_lazy(&self, mut x: LazyFrame) -> Result<LazyFrame> {
+        let mut parts: Vec<LazyFrame> = Vec::new();
+
+        for (t_name, transformer, columns) in &self.transformers {
+            let exprs: Vec<Expr> = columns.iter().map(|c| col(c.as_str())).collect();
+            let subset = x.clone().select(exprs);
+            let transformed = transformer.transform_lazy(subset).map_err(|e| {
+                Error::Computation(format!(
+                    "ColumnTransformer: transformer '{}' failed during lazy transform: {}",
+                    t_name, e
+                ))
+            })?;
+            parts.push(transformed);
+        }
+
+        let specified = self.all_specified_columns();
+        match self.remainder {
+            Remainder::Passthrough => {
+                let schema = x
+                    .collect_schema()
+                    .map_err(|e| Error::Computation(e.to_string()))?;
+                let remaining_cols: Vec<Expr> = schema
+                    .iter()
+                    .filter(|(name, _)| !specified.contains(name.as_str()))
+                    .map(|(name, _)| col(name.as_str()))
+                    .collect();
+                if !remaining_cols.is_empty() {
+                    let remaining = x.clone().select(remaining_cols);
+                    parts.push(remaining);
+                }
+            }
+            Remainder::Drop => {}
+        }
+
+        if parts.is_empty() {
+            return Err(Error::InvalidInput(
+                "ColumnTransformer produced no output columns. \
+                 Check that at least one transformer has matching input columns \
+                 or use Remainder::Passthrough to keep unspecified columns."
+                    .into(),
+            ));
+        }
+
+        polars::prelude::concat_lf_horizontal(parts, HConcatOptions::default()).map_err(|e| {
+            Error::Computation(format!(
+                "ColumnTransformer: failed to horizontally concatenate: {}",
+                e
+            ))
+        })
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -252,5 +329,29 @@ mod tests {
         );
         let df = make_test_df();
         assert!(ct.transform(df).is_err());
+    }
+
+    #[test]
+    fn test_column_transformer_lazy() {
+        let scaler_a = StandardScaler::new();
+        let scaler_b = StandardScaler::new();
+        let mut ct = ColumnTransformer::new(
+            vec![
+                ("scale_a".into(), Box::new(scaler_a), vec!["a".into()]),
+                ("scale_b".into(), Box::new(scaler_b), vec!["b".into()]),
+            ],
+            Remainder::Passthrough,
+        );
+        let df = make_test_df();
+
+        ct.fit_lazy(df.clone().lazy()).unwrap();
+        let eager_out = ct.transform(df.clone()).unwrap();
+        let lazy_out = ct
+            .transform_lazy(df.clone().lazy())
+            .unwrap()
+            .collect()
+            .unwrap();
+
+        assert_eq!(eager_out, lazy_out);
     }
 }

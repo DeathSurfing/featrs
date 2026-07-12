@@ -12,7 +12,7 @@ keywords = ["feature-engineering", "machine-learning", "preprocessing", "scikit-
 categories = ["science", "data-structures"]
 
 [dependencies]
-polars = "0.54"
+polars = { version = "0.54", features = ["lazy", "strings", "temporal"] }
 thiserror = "2"
 
 [dev-dependencies]

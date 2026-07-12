@@ -4,7 +4,7 @@
 //! input features up to a specified degree. Analogous to
 //! `sklearn.preprocessing.PolynomialFeatures`.
 
-use crate::traits::{Error, Fit, Result, Transform};
+use crate::traits::{Error, Fit, FitLazy, Result, Transform, TransformLazy};
 use crate::util::require_f64_columns;
 use polars::prelude::*;
 
@@ -376,6 +376,9 @@ impl Transform<DataFrame> for PolynomialFeatures {
             .map_err(|e| Error::Computation(format!("failed to create polynomial features: {}", e)))
     }
 }
+
+impl FitLazy for PolynomialFeatures {}
+impl TransformLazy for PolynomialFeatures {}
 
 #[cfg(test)]
 mod tests {

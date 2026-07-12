@@ -2,7 +2,7 @@
 //!
 //! [`Difference`] computes `x[t] - x[t - period]` and percentage change.
 
-use crate::traits::{Error, Fit, Result, Transform};
+use crate::traits::{Error, Fit, FitLazy, Result, Transform, TransformLazy};
 use polars::prelude::*;
 
 /// Compute differences and percentage changes.
@@ -135,6 +135,9 @@ impl Transform<DataFrame> for Difference {
         Ok(out)
     }
 }
+
+impl FitLazy for Difference {}
+impl TransformLazy for Difference {}
 
 #[cfg(test)]
 mod tests {

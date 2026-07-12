@@ -3,7 +3,7 @@
 //! [`Lagger`] creates shifted copies of columns for use as features
 //! in forecasting models. Analogous to `df.shift()` in pandas.
 
-use crate::traits::{Error, Fit, Result, Transform};
+use crate::traits::{Error, Fit, FitLazy, Result, Transform, TransformLazy};
 use polars::prelude::*;
 use std::collections::HashSet;
 
@@ -117,6 +117,9 @@ impl Transform<DataFrame> for Lagger {
         Ok(out)
     }
 }
+
+impl FitLazy for Lagger {}
+impl TransformLazy for Lagger {}
 
 #[cfg(test)]
 mod tests {

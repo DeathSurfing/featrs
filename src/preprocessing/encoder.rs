@@ -5,7 +5,7 @@
 //! - [`LabelEncoder`] — encode labels as `0..n_classes-1` integers
 //! - [`OrdinalEncoder`] — encode categorical features as integer columns
 
-use crate::traits::{Error, Fit, Result, Transform};
+use crate::traits::{Error, Fit, FitLazy, Result, Transform, TransformLazy};
 use polars::prelude::*;
 use std::collections::HashMap;
 
@@ -192,6 +192,9 @@ impl Transform<DataFrame> for OneHotEncoder {
     }
 }
 
+impl FitLazy for OneHotEncoder {}
+impl TransformLazy for OneHotEncoder {}
+
 /// Encode labels as integers `0` to `n_classes - 1`.
 ///
 /// Operates on a single string column. The mapping is sorted alphabetically.
@@ -309,6 +312,9 @@ impl Transform<DataFrame> for LabelEncoder {
             .map_err(|e| Error::Computation(e.to_string()))
     }
 }
+
+impl FitLazy for LabelEncoder {}
+impl TransformLazy for LabelEncoder {}
 
 /// Encode categorical features as integer columns.
 ///
@@ -449,6 +455,9 @@ impl Transform<DataFrame> for OrdinalEncoder {
         DataFrame::new(x.height(), out_cols).map_err(|e| Error::Computation(e.to_string()))
     }
 }
+
+impl FitLazy for OrdinalEncoder {}
+impl TransformLazy for OrdinalEncoder {}
 
 #[cfg(test)]
 mod tests {

@@ -4,16 +4,25 @@
 //! - [`StandardScaler`] — z-score normalization
 //! - [`MinMaxScaler`] — min-max scaling to a range
 //! - [`RobustScaler`] — scaling robust to outliers via IQR
+//!
+//! All three scalers implement [`TransformLazy`]
+//! with zero-copy Polars expressions, so they integrate into lazy pipelines
+//! without materializing intermediate `DataFrame`s.
 
 use polars::prelude::*;
 
-use crate::traits::{Error, Fit, Result, Transform};
+use crate::traits::{Error, Fit, FitLazy, Result, Transform, TransformLazy};
 use crate::util::{replace_f64_column, require_f64_columns};
 
 /// Standardize features by removing the mean and scaling to unit variance.
 ///
 /// For each column `x`, computes `(x - mean) / std` where `mean` and `std`
-/// are learned from the training data.
+/// are learned from the training data. Null values are preserved as-is;
+/// non-finite values (`NaN` / `±Inf`) are included in the statistics.
+///
+/// Implements [`TransformLazy`] with the lazy
+/// expression `(col - mean) / std`, which Polars can fuse with downstream
+/// filters and selects without materializing an intermediate `DataFrame`.
 ///
 /// # Example
 ///
@@ -184,6 +193,38 @@ impl Transform<DataFrame> for StandardScaler {
     }
 }
 
+impl FitLazy for StandardScaler {}
+
+impl TransformLazy for StandardScaler {
+    fn transform_lazy(&self, x: LazyFrame) -> Result<LazyFrame> {
+        if !self.fitted {
+            return Err(Error::NotFitted(
+                "StandardScaler has not been fitted. \
+                 Call .fit(dataframe) before .transform()."
+                    .into(),
+            ));
+        }
+
+        let params = self.params.as_ref().ok_or_else(|| {
+            Error::NotFitted(
+                "StandardScaler has not been fitted. \
+                 Call .fit(dataframe) before .transform()."
+                    .into(),
+            )
+        })?;
+
+        let mut exprs = Vec::with_capacity(params.len());
+        for p in params {
+            let name = p.name.as_str();
+            let mean = p.mean;
+            let std = p.std;
+            exprs.push((col(name) - lit(mean)) / lit(std));
+        }
+
+        Ok(x.with_columns(exprs))
+    }
+}
+
 /// Scale features to a given range (default `[0, 1]`).
 ///
 /// For each column `x`, computes `(x - min) / (max - min) * range + range_min`.
@@ -335,6 +376,38 @@ impl Transform<DataFrame> for MinMaxScaler {
         }
 
         Ok(out)
+    }
+}
+
+impl FitLazy for MinMaxScaler {}
+
+impl TransformLazy for MinMaxScaler {
+    fn transform_lazy(&self, x: LazyFrame) -> Result<LazyFrame> {
+        if !self.fitted {
+            return Err(Error::NotFitted(
+                "MinMaxScaler has not been fitted. \
+                 Call .fit(dataframe) before .transform()."
+                    .into(),
+            ));
+        }
+        let r_min = self.feature_range.0;
+        let params = self.params.as_ref().ok_or_else(|| {
+            Error::NotFitted(
+                "MinMaxScaler has not been fitted. \
+                 Call .fit(dataframe) before .transform()."
+                    .into(),
+            )
+        })?;
+
+        let mut exprs = Vec::with_capacity(params.len());
+        for p in params {
+            let name = p.name.as_str();
+            let min = p.min;
+            let scale = p.scale;
+            exprs.push((col(name) - lit(min)) * lit(scale) + lit(r_min));
+        }
+
+        Ok(x.with_columns(exprs))
     }
 }
 
@@ -511,6 +584,37 @@ impl Transform<DataFrame> for RobustScaler {
         }
 
         Ok(out)
+    }
+}
+
+impl FitLazy for RobustScaler {}
+
+impl TransformLazy for RobustScaler {
+    fn transform_lazy(&self, x: LazyFrame) -> Result<LazyFrame> {
+        if !self.fitted {
+            return Err(Error::NotFitted(
+                "RobustScaler has not been fitted. \
+                 Call .fit(dataframe) before .transform()."
+                    .into(),
+            ));
+        }
+        let params = self.params.as_ref().ok_or_else(|| {
+            Error::NotFitted(
+                "RobustScaler has not been fitted. \
+                 Call .fit(dataframe) before .transform()."
+                    .into(),
+            )
+        })?;
+
+        let mut exprs = Vec::with_capacity(params.len());
+        for p in params {
+            let name = p.name.as_str();
+            let center = p.center;
+            let scale = p.scale;
+            exprs.push((col(name) - lit(center)) / lit(scale));
+        }
+
+        Ok(x.with_columns(exprs))
     }
 }
 
@@ -777,5 +881,43 @@ mod tests {
             "NaN input must map to NaN through transform"
         );
         assert_relative_eq!(vals[2].unwrap(), 1.0, epsilon = 1e-6);
+    }
+
+    #[test]
+    fn test_lazy_scalers() {
+        let df = make_test_df();
+
+        // 1. StandardScaler
+        let mut std_scaler = StandardScaler::new();
+        std_scaler.fit(df.clone()).unwrap();
+        let eager_std = std_scaler.transform(df.clone()).unwrap();
+        let lazy_std = std_scaler
+            .transform_lazy(df.clone().lazy())
+            .unwrap()
+            .collect()
+            .unwrap();
+        assert_eq!(eager_std, lazy_std);
+
+        // 2. MinMaxScaler
+        let mut min_max = MinMaxScaler::new().feature_range((-1.0, 1.0));
+        min_max.fit(df.clone()).unwrap();
+        let eager_mm = min_max.transform(df.clone()).unwrap();
+        let lazy_mm = min_max
+            .transform_lazy(df.clone().lazy())
+            .unwrap()
+            .collect()
+            .unwrap();
+        assert_eq!(eager_mm, lazy_mm);
+
+        // 3. RobustScaler
+        let mut robust = RobustScaler::new();
+        robust.fit(df.clone()).unwrap();
+        let eager_rb = robust.transform(df.clone()).unwrap();
+        let lazy_rb = robust
+            .transform_lazy(df.clone().lazy())
+            .unwrap()
+            .collect()
+            .unwrap();
+        assert_eq!(eager_rb, lazy_rb);
     }
 }

@@ -4,7 +4,7 @@
 //! were missing (null / `None`) in the original data. Useful for
 //! informing models about missingness patterns.
 
-use crate::traits::{Error, Fit, Result, Transform};
+use crate::traits::{Error, Fit, FitLazy, Result, Transform, TransformLazy};
 use polars::prelude::*;
 
 /// Add binary indicator columns for missing values.
@@ -119,6 +119,9 @@ impl Transform<DataFrame> for MissingIndicator {
         Ok(out)
     }
 }
+
+impl FitLazy for MissingIndicator {}
+impl TransformLazy for MissingIndicator {}
 
 #[cfg(test)]
 mod tests {

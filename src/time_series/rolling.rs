@@ -3,7 +3,7 @@
 //! [`RollingAggregator`] computes rolling mean, std, min, max, sum
 //! over a fixed window. Analogous to `df.rolling()` in pandas.
 
-use crate::traits::{Error, Fit, Result, Transform};
+use crate::traits::{Error, Fit, FitLazy, Result, Transform, TransformLazy};
 use polars::prelude::*;
 
 /// Rolling window function to apply.
@@ -164,6 +164,9 @@ impl Transform<DataFrame> for RollingAggregator {
         Ok(out)
     }
 }
+
+impl FitLazy for RollingAggregator {}
+impl TransformLazy for RollingAggregator {}
 
 #[cfg(test)]
 mod tests {

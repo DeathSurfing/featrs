@@ -9,6 +9,8 @@
 Feature engineering library for Rust, inspired by scikit-learn.
 
 Built on [Polars](https://pola.rs) — all transformations operate natively on `DataFrame` and preserve column names.
+Every transformer also supports Polars `LazyFrame` through the `FitLazy` and `TransformLazy` traits,
+enabling query-plan optimization, predicate pushdown, and out-of-core streaming.
 
 ## Installation
 
@@ -52,6 +54,7 @@ let scaled = scaler.transform(data)?;
 | **Selection** | `VarianceThreshold` | Remove low-variance features |
 | | `SelectKBest` | Select top-k features by statistical test (ANOVA F) |
 | **Auto** | `AutoTypeDetector` | Auto-detect column types and apply default transforms |
+| **Lazy API** | `FitLazy` / `TransformLazy` | Execute any transformer on a Polars `LazyFrame`; six transformers use zero-copy expressions |
 
 ## Examples
 
@@ -65,7 +68,7 @@ scaler.fit(df.clone())?;
 let scaled = scaler.transform(df)?;
 ```
 
-### Pipeline
+### Pipeline (eager)
 
 ```rust
 use featrs::prelude::*;
@@ -76,6 +79,19 @@ let mut pipeline = Pipeline::new(vec![
 ])?;
 pipeline.fit(df.clone())?;
 let result = pipeline.transform(df)?;
+```
+
+### Pipeline (lazy — single optimized Polars query plan)
+
+```rust
+use featrs::prelude::*;
+
+let mut pipeline = Pipeline::new(vec![
+    ("scale".into(), Box::new(StandardScaler::new())),
+    ("binarize".into(), Box::new(Binarizer::new(0.0))),
+])?;
+pipeline.fit_lazy(df.clone().lazy())?;
+let result = pipeline.transform_lazy(df.lazy())?.collect()?;
 ```
 
 ### ColumnTransformer

@@ -3,7 +3,7 @@
 //! [`Normalizer`] scales each row (sample) to unit norm independently.
 //! Supports L1, L2, and Max norms. Analogous to `sklearn.preprocessing.Normalizer`.
 
-use crate::traits::{Error, Fit, Result, Transform};
+use crate::traits::{Error, Fit, FitLazy, Result, Transform, TransformLazy};
 use polars::prelude::*;
 
 /// Normalize samples individually to unit norm.
@@ -171,6 +171,9 @@ impl Transform<DataFrame> for Normalizer {
         DataFrame::new(n_rows, out_cols).map_err(|e| Error::Computation(e.to_string()))
     }
 }
+
+impl FitLazy for Normalizer {}
+impl TransformLazy for Normalizer {}
 
 #[cfg(test)]
 mod tests {

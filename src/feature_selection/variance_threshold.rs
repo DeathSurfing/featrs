@@ -2,8 +2,12 @@
 //!
 //! [`VarianceThreshold`] removes features whose variance does not meet
 //! a threshold, i.e. features that are constant or nearly constant.
+//!
+//! Implements [`TransformLazy`] with a
+//! `select(selected_cols)` Polars expression, enabling predicate and
+//! projection pushdown in lazy pipelines.
 
-use crate::traits::{Error, Fit, Result, Transform};
+use crate::traits::{Error, Fit, FitLazy, Result, Transform, TransformLazy};
 use polars::prelude::*;
 
 /// Remove features with variance below a threshold.
@@ -13,6 +17,10 @@ use polars::prelude::*;
 ///
 /// Only `Float64` columns are considered; columns of other dtypes are silently
 /// dropped from the output.
+///
+/// Implements [`TransformLazy`] with a
+/// `select(selected_cols)` expression, allowing Polars to push column
+/// projections through the rest of the query plan.
 ///
 /// # Example
 ///
@@ -145,6 +153,29 @@ impl Transform<DataFrame> for VarianceThreshold {
         let refs: Vec<&str> = cols.iter().map(|s| s.as_str()).collect();
         x.select(refs)
             .map_err(|e| Error::Computation(e.to_string()))
+    }
+}
+
+impl FitLazy for VarianceThreshold {}
+
+impl TransformLazy for VarianceThreshold {
+    fn transform_lazy(&self, x: LazyFrame) -> Result<LazyFrame> {
+        if !self.fitted {
+            return Err(Error::NotFitted(
+                "VarianceThreshold has not been fitted. \
+                 Call .fit(dataframe) before .transform()."
+                    .into(),
+            ));
+        }
+        let cols = self.selected_columns.as_ref().ok_or_else(|| {
+            Error::NotFitted(
+                "VarianceThreshold has not been fitted. \
+                 Call .fit(dataframe) before .transform()."
+                    .into(),
+            )
+        })?;
+        let exprs: Vec<Expr> = cols.iter().map(|name| col(name.as_str())).collect();
+        Ok(x.select(exprs))
     }
 }
 

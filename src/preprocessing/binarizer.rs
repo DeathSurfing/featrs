@@ -1,15 +1,25 @@
 //! Feature binarization.
 //!
 //! [`Binarizer`] thresholds numeric features: values above the threshold
-//! become `1.0`, others become `0.0`.
+//! become `1.0`, others become `0.0`. `null` values are preserved as-is;
+//! `NaN` values are also propagated unchanged.
+//!
+//! Implements [`TransformLazy`] with a
+//! `when/then/otherwise` Polars expression, so it integrates into lazy
+//! pipelines without materializing intermediate `DataFrame`s.
 
-use crate::traits::{Error, Fit, Result, Transform};
+use crate::traits::{Error, Fit, FitLazy, Result, Transform, TransformLazy};
 use crate::util::replace_f64_column;
 use polars::prelude::*;
 
 /// Binarize data according to a threshold.
 ///
-/// Values `> threshold` become `1.0`; all others become `0.0`.
+/// Values `> threshold` become `1.0`; values `<= threshold` become `0.0`.
+/// `null` values are preserved as `null`; `NaN` values are propagated as `NaN`.
+///
+/// Implements [`TransformLazy`] with a
+/// `when/then/otherwise` Polars expression that handles `null` and `NaN`
+/// propagation without materializing the `LazyFrame`.
 ///
 /// # Example
 ///
@@ -101,11 +111,57 @@ impl Transform<DataFrame> for Binarizer {
 
         for name in &col_names {
             replace_f64_column(&mut out, name.as_str(), "Binarizer", |v| {
-                if v > threshold { 1.0 } else { 0.0 }
+                if v.is_nan() {
+                    v
+                } else if v > threshold {
+                    1.0
+                } else {
+                    0.0
+                }
             })?;
         }
 
         Ok(out)
+    }
+}
+
+impl FitLazy for Binarizer {}
+
+impl TransformLazy for Binarizer {
+    fn transform_lazy(&self, mut x: LazyFrame) -> Result<LazyFrame> {
+        if !self.fitted {
+            return Err(Error::NotFitted(
+                "Binarizer has not been fitted. \
+                 Call .fit(dataframe) before .transform()."
+                    .into(),
+            ));
+        }
+
+        let schema = x
+            .collect_schema()
+            .map_err(|e| Error::Computation(e.to_string()))?;
+        let mut exprs = Vec::new();
+        let threshold = self.threshold;
+
+        for (name, dtype) in schema.iter() {
+            if dtype == &DataType::Float64 {
+                let name_str = name.as_str();
+                exprs.push(
+                    when(col(name_str).is_null())
+                        .then(lit(Null {}))
+                        .otherwise(
+                            when(col(name_str).is_nan()).then(lit(f64::NAN)).otherwise(
+                                when(col(name_str).gt(lit(threshold)))
+                                    .then(lit(1.0))
+                                    .otherwise(lit(0.0)),
+                            ),
+                        )
+                        .alias(name_str),
+                );
+            }
+        }
+
+        Ok(x.with_columns(exprs))
     }
 }
 
@@ -174,5 +230,53 @@ mod tests {
             err.to_string().contains("empty DataFrame"),
             "error message should mention the empty DataFrame"
         );
+    }
+
+    #[test]
+    fn test_lazy_binarizer() {
+        let mut b = Binarizer::new(0.5);
+        let a = Column::from(Series::new("x".into(), &[-1.0f64, 0.5, 2.0, f64::NAN]));
+        let df = DataFrame::new(4, vec![a]).unwrap();
+
+        b.fit(df.clone()).unwrap();
+        let eager_out = b.transform(df.clone()).unwrap();
+        let lazy_out = b
+            .transform_lazy(df.clone().lazy())
+            .unwrap()
+            .collect()
+            .unwrap();
+
+        let eager_vals: Vec<Option<f64>> = eager_out
+            .column("x")
+            .unwrap()
+            .f64()
+            .unwrap()
+            .iter()
+            .collect();
+        let lazy_vals: Vec<Option<f64>> = lazy_out
+            .column("x")
+            .unwrap()
+            .f64()
+            .unwrap()
+            .iter()
+            .collect();
+
+        assert_eq!(eager_vals.len(), lazy_vals.len());
+        for i in 0..eager_vals.len() {
+            match (eager_vals[i], lazy_vals[i]) {
+                (Some(ev), Some(lv)) => {
+                    if ev.is_nan() {
+                        assert!(lv.is_nan());
+                    } else {
+                        assert_relative_eq!(ev, lv, epsilon = 1e-6);
+                    }
+                }
+                (None, None) => {}
+                _ => panic!(
+                    "Mismatch at index {}: eager={:?}, lazy={:?}",
+                    i, eager_vals[i], lazy_vals[i]
+                ),
+            }
+        }
     }
 }

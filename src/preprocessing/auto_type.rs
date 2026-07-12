@@ -7,7 +7,7 @@
 use crate::pipeline::DataFrameTransformer;
 use crate::preprocessing::encoder::OneHotEncoder;
 use crate::preprocessing::feature_hasher::FeatureHasher;
-use crate::traits::{Error, Fit, Result, Transform};
+use crate::traits::{Error, Fit, FitLazy, Result, Transform, TransformLazy};
 use polars::prelude::*;
 
 /// How to treat each detected column type.
@@ -252,6 +252,9 @@ impl Transform<DataFrame> for AutoTypeDetector {
         Ok(result)
     }
 }
+
+impl FitLazy for AutoTypeDetector {}
+impl TransformLazy for AutoTypeDetector {}
 
 #[cfg(test)]
 mod tests {

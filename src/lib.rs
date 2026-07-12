@@ -1,9 +1,13 @@
 //! `featrs` — feature engineering for Rust, inspired by scikit-learn.
 //!
 //! Built on [Polars](https://pola.rs), all transformations operate on
-//! `DataFrame` and preserve column names throughout.
+//! `DataFrame` and preserve column names throughout. Every transformer also
+//! supports Polars [`LazyFrame`](polars::prelude::LazyFrame) through the
+//! [`FitLazy`] and
+//! [`TransformLazy`] traits, enabling
+//! query-plan optimization, predicate pushdown, and streaming for large datasets.
 //!
-//! # Quick start
+//! # Quick start — eager
 //!
 //! ```rust
 //! use featrs::prelude::*;
@@ -19,15 +23,31 @@
 //! # Ok::<(), Box<dyn std::error::Error>>(())
 //! ```
 //!
+//! # Quick start — lazy
+//!
+//! ```rust
+//! use featrs::prelude::*;
+//! use polars::prelude::{Column, DataFrame, IntoLazy, NamedFrom, Series};
+//!
+//! let col = Column::from(Series::new("x".into(), &[1.0_f64, 2.0, 3.0]));
+//! let df = DataFrame::new(3, vec![col])?;
+//!
+//! let mut scaler = StandardScaler::new();
+//! scaler.fit_lazy(df.clone().lazy())?;
+//! let result = scaler.transform_lazy(df.lazy())?.collect()?;
+//! assert_eq!(result.height(), 3);
+//! # Ok::<(), Box<dyn std::error::Error>>(())
+//! ```
+//!
 //! # Modules
 //!
 //! | Module | Description |
 //! |---|---|
 //! | [`prelude`] | Convenient glob-import of the most common types |
 //! | [`preprocessing`] | Scaling, encoding, normalization, imputation, binarization, polynomial features, feature hashing, auto-type detection |
-//! | [`pipeline`] | `Pipeline` (sequential) and `ColumnTransformer` (per-column transforms) |
+//! | [`pipeline`] | `Pipeline` (sequential) and `ColumnTransformer` (per-column transforms) — both support lazy execution |
 //! | [`feature_selection`] | `VarianceThreshold`, `SelectKBest` with ANOVA F-value scoring |
-//! | [`traits`] | Core `Fit`, `Transform`, `FitTransform` traits and error types |
+//! | [`traits`] | Core `Fit`, `Transform`, `FitTransform`, `FitLazy`, `TransformLazy` traits and error types |
 //! | [`time_series`] | Lag features, rolling windows, difference, cyclical encoding |
 
 #![forbid(unsafe_code)]
@@ -79,7 +99,9 @@ pub mod prelude {
     pub use crate::time_series::diff::Difference;
     pub use crate::time_series::lag::Lagger;
     pub use crate::time_series::rolling::RollingAggregator;
-    pub use crate::traits::{Error, Fit, FitSupervised, FitTransform, Result, Transform};
+    pub use crate::traits::{
+        Error, Fit, FitLazy, FitSupervised, FitTransform, Result, Transform, TransformLazy,
+    };
 }
 
 // --- Shallow re-exports at crate root ---

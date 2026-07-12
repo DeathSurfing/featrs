@@ -3,7 +3,7 @@
 //! Provides [`SelectKBest`] and the [`FClassif`] scoring function
 //! (ANOVA F-value between each feature and the target).
 
-use crate::traits::{Error, FitSupervised, Result, Transform};
+use crate::traits::{Error, FitSupervised, Result, Transform, TransformLazy};
 use polars::prelude::*;
 
 /// Scoring function for [`SelectKBest`].
@@ -270,6 +270,34 @@ impl Transform<DataFrame> for SelectKBest {
         let refs: Vec<&str> = cols.iter().map(|s| s.as_str()).collect();
         x.select(refs)
             .map_err(|e| Error::Computation(e.to_string()))
+    }
+}
+
+impl TransformLazy for SelectKBest {
+    fn transform_lazy(&self, x: LazyFrame) -> Result<LazyFrame> {
+        if !self.fitted {
+            return Err(Error::NotFitted(
+                "SelectKBest has not been fitted. \
+                 Call .fit(dataframe, target) before .transform()."
+                    .into(),
+            ));
+        }
+        let cols = self.selected_columns.as_ref().ok_or_else(|| {
+            Error::NotFitted(
+                "SelectKBest has not been fitted. \
+                 Call .fit(dataframe, target) before .transform()."
+                    .into(),
+            )
+        })?;
+        if cols.is_empty() {
+            return Err(Error::Computation(
+                "SelectKBest: no columns were selected. \
+                 This may mean the scoring function returned no valid scores."
+                    .into(),
+            ));
+        }
+        let exprs: Vec<Expr> = cols.iter().map(|name| col(name.as_str())).collect();
+        Ok(x.select(exprs))
     }
 }
 

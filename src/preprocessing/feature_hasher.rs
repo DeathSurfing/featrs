@@ -7,7 +7,7 @@
 //! (`+1.0` / `-1.0`) of each addition, so the expected value of every bucket
 //! is zero and collisions do not bias the mean.
 
-use crate::traits::{Error, Fit, Result, Transform};
+use crate::traits::{Error, Fit, FitLazy, Result, Transform, TransformLazy};
 use polars::prelude::*;
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
@@ -145,6 +145,9 @@ impl Transform<DataFrame> for FeatureHasher {
         DataFrame::new(n_rows, out_cols).map_err(|e| Error::Computation(e.to_string()))
     }
 }
+
+impl FitLazy for FeatureHasher {}
+impl TransformLazy for FeatureHasher {}
 
 #[cfg(test)]
 mod tests {

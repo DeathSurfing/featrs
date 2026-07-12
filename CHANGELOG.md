@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **LazyFrame support** (`FitLazy` / `TransformLazy` traits, closes #79).
+  Every transformer now accepts a Polars `LazyFrame` in addition to `DataFrame`.
+  The default implementation collects eagerly and re-lazifies, so all existing
+  transformers work out of the box. Six transformers override `transform_lazy`
+  with zero-copy Polars expressions that stay inside the query plan:
+  `StandardScaler` (`(col - mean) / std`), `MinMaxScaler`, `RobustScaler`,
+  `Binarizer` (`when/then/otherwise` with correct `null`/`NaN` propagation),
+  `VarianceThreshold`, and `SelectKBest` (both use `select(cols)` for
+  projection pushdown). `Pipeline` and `ColumnTransformer` chain lazy
+  transforms sequentially / horizontally so an entire pipeline can be
+  expressed as a single optimized Polars query plan.
+- `FitLazy` and `TransformLazy` exported from `featrs::prelude`.
+- `DataFrameTransformer` trait alias now requires `FitLazy + TransformLazy`
+  in addition to `Fit + Transform`.
+
 ### Fixed
 
 - `Lagger.fit` now rejects duplicate periods at fit time, returning a clear

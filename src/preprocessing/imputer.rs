@@ -3,7 +3,7 @@
 //! [`SimpleImputer`] replaces missing (`None` / `null`) values with
 //! a statistic computed from the non-missing values in each column.
 
-use crate::traits::{Error, Fit, Result, Transform};
+use crate::traits::{Error, Fit, FitLazy, Result, Transform, TransformLazy};
 use polars::prelude::*;
 use std::collections::HashMap;
 
@@ -228,6 +228,9 @@ impl Transform<DataFrame> for SimpleImputer {
         Ok(out)
     }
 }
+
+impl FitLazy for SimpleImputer {}
+impl TransformLazy for SimpleImputer {}
 
 #[cfg(test)]
 mod tests {
