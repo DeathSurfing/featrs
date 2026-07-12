@@ -7,8 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.5] - 2026-07-12
+
+### Added
+
+- `InteractionFeatures` for generating pairwise interaction features
+  (element-wise products of input column pairs) without the full
+  polynomial expansion. Supports `columns`, `min_degree`, and
+  `max_degree` configuration via `InteractionFeaturesBuilder` (#68).
+
 ### Fixed
 
+- `StandardScaler.fit` now computes variance using the fitted mean
+  regardless of `with_mean`. Previously the variance was computed against
+  `col_mean` (0.0 when `with_mean` is false), producing incorrect scaling
+  when `with_mean = false` (#35).
+- `CyclicalEncoder.fit` now validates input columns and configuration
+  at fit time, surfacing errors early instead of failing during
+  `transform` (#98).
 - `Lagger.fit` now rejects duplicate periods at fit time, returning a clear
   `InvalidInput` error instead of silently overwriting lag columns on
   `transform` (Polars `DataFrame::with_column` replaces same-named columns).
@@ -152,7 +168,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Pipeline primitives: `Pipeline`, `ColumnTransformer` with `Remainder`.
 - Comprehensive API docs, module docs, and contributing guide.
 
-[Unreleased]: https://github.com/DeathSurfing/featrs/compare/v0.3.4...HEAD
+[Unreleased]: https://github.com/DeathSurfing/featrs/compare/v0.3.5...HEAD
+[0.3.5]: https://github.com/DeathSurfing/featrs/compare/v0.3.4...v0.3.5
 [0.3.4]: https://github.com/DeathSurfing/featrs/compare/v0.3.3...v0.3.4
 [0.3.3]: https://github.com/DeathSurfing/featrs/compare/v0.3.2...v0.3.3
 [0.3.2]: https://github.com/DeathSurfing/featrs/compare/v0.3.1...v0.3.2
