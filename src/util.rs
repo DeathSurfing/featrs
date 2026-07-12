@@ -3,7 +3,7 @@
 //! These utilities exist to keep the per-transformer code free of duplicated
 //! column-discovery, validation, and in-place replacement boilerplate.
 
-use polars::prelude::{ChunkedArray, DataFrame, DataType, Float64Type, IntoSeries};
+use polars::prelude::{ChunkedArray, DataFrame, DataType, Float64Type, IntoSeries, Series};
 
 use crate::traits::{Error, Result};
 
@@ -75,4 +75,51 @@ where
         ))
     })?;
     Ok(())
+}
+
+/// Raise every non-null `f64` element of `s` to the integer power `exp`.
+///
+/// `who` names the calling transformer so failures are easy to trace.
+/// Nulls are preserved; the returned series keeps the input's name.
+pub(crate) fn series_pow(s: &Series, exp: usize, who: &str) -> Result<Series> {
+    let ca = s.f64().map_err(|e| {
+        Error::Computation(format!(
+            "{who}: expected f64 series for column '{}'. {e}",
+            s.name()
+        ))
+    })?;
+    let exp_f64 = exp as f64;
+    let result: ChunkedArray<Float64Type> =
+        ca.iter().map(|opt| opt.map(|v| v.powf(exp_f64))).collect();
+    Ok(result.into_series())
+}
+
+/// Element-wise product of two `f64` series.
+///
+/// `who` names the calling transformer for error context. The returned
+/// series has no name set yet (callers typically rename it). If either
+/// input is null at a given row, the output is null at that row; NaN
+/// values are propagated by the underlying `f64` multiplication.
+pub(crate) fn series_mul(a: &Series, b: &Series, who: &str) -> Result<Series> {
+    let ca_a = a.f64().map_err(|e| {
+        Error::Computation(format!(
+            "{who}: expected f64 series for column '{}'. {e}",
+            a.name()
+        ))
+    })?;
+    let ca_b = b.f64().map_err(|e| {
+        Error::Computation(format!(
+            "{who}: expected f64 series for column '{}'. {e}",
+            b.name()
+        ))
+    })?;
+    let result: ChunkedArray<Float64Type> = ca_a
+        .iter()
+        .zip(ca_b.iter())
+        .map(|(opt_a, opt_b)| match (opt_a, opt_b) {
+            (Some(va), Some(vb)) => Some(va * vb),
+            _ => None,
+        })
+        .collect();
+    Ok(result.into_series())
 }
