@@ -158,8 +158,7 @@ impl Fit<DataFrame> for InteractionFeatures {
     fn fit(&mut self, x: DataFrame) -> Result<()> {
         if x.height() == 0 || x.width() == 0 {
             return Err(Error::InvalidInput(
-                "InteractionFeatures.fit received an empty DataFrame (0 rows or 0 columns)."
-                    .into(),
+                "InteractionFeatures.fit received an empty DataFrame (0 rows or 0 columns).".into(),
             ));
         }
 
@@ -169,11 +168,7 @@ impl Fit<DataFrame> for InteractionFeatures {
                 let all_types: Vec<String> = x
                     .get_column_names()
                     .iter()
-                    .filter_map(|n| {
-                        x.column(n)
-                            .ok()
-                            .map(|c| format!("'{n}' ({})", c.dtype()))
-                    })
+                    .filter_map(|n| x.column(n).ok().map(|c| format!("'{n}' ({})", c.dtype())))
                     .collect();
                 return Err(Error::InvalidInput(format!(
                     "InteractionFeatures: no Float64 columns found. This transformer only \
@@ -382,10 +377,8 @@ mod tests {
 
     #[test]
     fn test_interaction_null_propagation() {
-        let a =
-            Column::from(Series::new("a".into(), &[Some(1.0_f64), None, Some(3.0)]));
-        let b =
-            Column::from(Series::new("b".into(), &[Some(4.0_f64), Some(5.0), None]));
+        let a = Column::from(Series::new("a".into(), &[Some(1.0_f64), None, Some(3.0)]));
+        let b = Column::from(Series::new("b".into(), &[Some(4.0_f64), Some(5.0), None]));
         let df = DataFrame::new(3, vec![a, b]).unwrap();
 
         let mut xf = InteractionFeatures::builder().build();
@@ -436,8 +429,7 @@ mod tests {
     fn test_interaction_auto_discovery_skips_non_f64() {
         // mixed dtypes: only f64 columns participate
         let a = Column::from(Series::new("a".into(), &[1.0_f64, 2.0, 3.0]));
-        let cat =
-            Column::from(Series::new("cat".into(), &["x", "y", "z"]));
+        let cat = Column::from(Series::new("cat".into(), &["x", "y", "z"]));
         let b = Column::from(Series::new("b".into(), &[4.0_f64, 5.0, 6.0]));
         let df = DataFrame::new(3, vec![a, cat, b]).unwrap();
 
@@ -452,8 +444,7 @@ mod tests {
 
     #[test]
     fn test_interaction_auto_discovery_no_f64_errors() {
-        let cat =
-            Column::from(Series::new("cat".into(), &["x", "y", "z"]));
+        let cat = Column::from(Series::new("cat".into(), &["x", "y", "z"]));
         let df = DataFrame::new(3, vec![cat]).unwrap();
 
         let mut xf = InteractionFeatures::builder().build();
@@ -464,9 +455,7 @@ mod tests {
     #[test]
     fn test_interaction_explicit_columns() {
         let df = make_three_col_df();
-        let mut xf = InteractionFeatures::builder()
-            .columns(&["a", "c"])
-            .build();
+        let mut xf = InteractionFeatures::builder().columns(&["a", "c"]).build();
         xf.fit(df.clone()).unwrap();
         let out = xf.transform(df).unwrap();
 
@@ -489,8 +478,7 @@ mod tests {
     #[test]
     fn test_interaction_explicit_non_f64_column_errors() {
         let a = Column::from(Series::new("a".into(), &[1.0_f64, 2.0, 3.0]));
-        let cat =
-            Column::from(Series::new("cat".into(), &["x", "y", "z"]));
+        let cat = Column::from(Series::new("cat".into(), &["x", "y", "z"]));
         let df = DataFrame::new(3, vec![a, cat]).unwrap();
 
         let mut xf = InteractionFeatures::builder()
@@ -529,9 +517,7 @@ mod tests {
     fn test_interaction_column_order_preserved() {
         // explicit column order [b, a] → pair name b_x_a, not a_x_b
         let df = make_two_col_df();
-        let mut xf = InteractionFeatures::builder()
-            .columns(&["b", "a"])
-            .build();
+        let mut xf = InteractionFeatures::builder().columns(&["b", "a"]).build();
         xf.fit(df.clone()).unwrap();
         let out = xf.transform(df).unwrap();
 
