@@ -228,6 +228,14 @@ impl Fit<DataFrame> for PolynomialFeatures {
             ));
         }
         let col_names = require_f64_columns(&x, "PolynomialFeatures")?;
+        if self.include_bias && col_names.iter().any(|c| c == "bias") {
+            return Err(Error::InvalidInput(
+                "PolynomialFeatures: input contains a column named 'bias', which collides \
+                 with the synthetic bias column. Rename the input column or set \
+                 include_bias(false)."
+                    .into(),
+            ));
+        }
         self.input_columns = Some(col_names);
         self.fitted = true;
         Ok(())
@@ -378,6 +386,33 @@ mod tests {
         pf.fit(df.clone()).unwrap();
         let result = pf.transform(df).unwrap();
 
+        assert_eq!(result.width(), 5);
+    }
+
+    #[test]
+    fn test_bias_column_collision_detected_at_fit() {
+        let bias_col = Column::from(Series::new("bias".into(), &[1.0f64, 2.0, 3.0]));
+        let a = Column::from(Series::new("a".into(), &[4.0f64, 5.0, 6.0]));
+        let df = DataFrame::new(3, vec![bias_col, a]).unwrap();
+
+        let mut pf = PolynomialFeatures::new(2).unwrap().include_bias(true);
+        let err = pf.fit(df).unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            msg.contains("bias") && msg.contains("collides"),
+            "expected error mentioning 'bias' and 'collides', got: {msg}"
+        );
+    }
+
+    #[test]
+    fn test_bias_column_collision_skipped_when_no_bias() {
+        let bias_col = Column::from(Series::new("bias".into(), &[1.0f64, 2.0, 3.0]));
+        let a = Column::from(Series::new("a".into(), &[4.0f64, 5.0, 6.0]));
+        let df = DataFrame::new(3, vec![bias_col, a]).unwrap();
+
+        let mut pf = PolynomialFeatures::new(2).unwrap().include_bias(false);
+        pf.fit(df.clone()).unwrap();
+        let result = pf.transform(df).unwrap();
         assert_eq!(result.width(), 5);
     }
 
