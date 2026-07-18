@@ -399,8 +399,14 @@ mod tests {
         let err = pf.fit(df).unwrap_err();
         match &err {
             Error::InvalidInput(msg) => {
-                assert!(msg.contains("bias"), "expected message containing 'bias', got: {msg}");
-                assert!(msg.contains("collides"), "expected message containing 'collides', got: {msg}");
+                assert!(
+                    msg.contains("bias"),
+                    "expected message containing 'bias', got: {msg}"
+                );
+                assert!(
+                    msg.contains("collides"),
+                    "expected message containing 'collides', got: {msg}"
+                );
             }
             other => panic!("expected Error::InvalidInput, got {other:?}"),
         }
