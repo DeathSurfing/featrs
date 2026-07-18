@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- `PolynomialFeatures.fit` now validates that input columns do not share the
+  `"bias"` name with the synthetic bias column, returning a clear
+  `InvalidInput` error at fit time instead of crashing on duplicate column
+  names during transform (#41).
+
 ## [0.3.5] - 2026-07-12
 
 ### Added
