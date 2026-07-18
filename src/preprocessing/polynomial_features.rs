@@ -397,11 +397,13 @@ mod tests {
 
         let mut pf = PolynomialFeatures::new(2).unwrap().include_bias(true);
         let err = pf.fit(df).unwrap_err();
-        let msg = err.to_string();
-        assert!(
-            msg.contains("bias") && msg.contains("collides"),
-            "expected error mentioning 'bias' and 'collides', got: {msg}"
-        );
+        match &err {
+            Error::InvalidInput(msg) => {
+                assert!(msg.contains("bias"), "expected message containing 'bias', got: {msg}");
+                assert!(msg.contains("collides"), "expected message containing 'collides', got: {msg}");
+            }
+            other => panic!("expected Error::InvalidInput, got {other:?}"),
+        }
     }
 
     #[test]
