@@ -13,4 +13,6 @@ pub mod interaction_features;
 pub mod missing_indicator;
 pub mod normalizer;
 pub mod polynomial_features;
+/// Quantile-based transformation to uniform or normal distribution.
+pub mod quantile_transformer;
 pub mod scaler;
