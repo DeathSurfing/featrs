@@ -95,6 +95,14 @@ impl Fit<DataFrame> for QuantileTransformer {
             ));
         }
 
+        if self.n_quantiles == 0 {
+            return Err(Error::InvalidInput(
+                "QuantileTransformer.fit: n_quantiles must be positive, got 0. \
+                 Set a positive value via .n_quantiles()."
+                    .into(),
+            ));
+        }
+
         let col_names = require_f64_columns(&x, "QuantileTransformer")?;
         let n_quantiles = self.n_quantiles.min(x.height());
 
