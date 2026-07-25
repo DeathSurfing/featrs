@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `Pipeline` now tracks its own fitted state: `transform` before `fit`
+  returns a clear `NotFitted` error ("Pipeline has not been fitted...")
+  instead of a misleading `Computation` error wrapping an inner step's
+  message. `Pipeline::fit`/`transform` also preserve the original error
+  variant (`InvalidInput`/`NotFitted`) from failing steps instead of
+  collapsing everything into `Computation`. A failed re-fit resets the
+  fitted flag so `transform` cannot silently use stale state (#13).
 - `PolynomialFeatures.fit` now validates that input columns do not share the
   `"bias"` name with the synthetic bias column, returning a clear
   `InvalidInput` error at fit time instead of crashing on duplicate column
