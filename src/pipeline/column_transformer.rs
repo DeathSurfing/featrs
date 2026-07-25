@@ -79,6 +79,21 @@ impl Fit<DataFrame> for ColumnTransformer {
                 "ColumnTransformer.fit received a DataFrame with 0 columns.".into(),
             ));
         }
+
+        let mut seen: HashSet<&str> = HashSet::new();
+        for (t_name, _, columns) in &self.transformers {
+            for c in columns {
+                if !seen.insert(c.as_str()) {
+                    return Err(Error::InvalidInput(format!(
+                        "ColumnTransformer: column '{}' is specified by more than one \
+                         transformer (collision detected on transformer '{}'). Each column \
+                         may belong to at most one transformer.",
+                        c, t_name
+                    )));
+                }
+            }
+        }
+
         for (t_name, transformer, columns) in &mut self.transformers {
             let col_names = columns.clone();
             let subset = x.select(&col_names).map_err(|e| {
@@ -252,5 +267,28 @@ mod tests {
         );
         let df = make_test_df();
         assert!(ct.transform(df).is_err());
+    }
+
+    #[test]
+    fn test_column_transformer_overlapping_columns_errors_at_fit() {
+        let scaler_1 = StandardScaler::new();
+        let scaler_2 = StandardScaler::new();
+        let mut ct = ColumnTransformer::new(
+            vec![
+                ("s1".into(), Box::new(scaler_1), vec!["a".into()]),
+                (
+                    "s2".into(),
+                    Box::new(scaler_2),
+                    vec!["a".into(), "b".into()],
+                ),
+            ],
+            Remainder::Drop,
+        );
+        let df = make_test_df();
+
+        let err = ct.fit(df).unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains('a'));
+        assert!(msg.contains("s2"));
     }
 }
