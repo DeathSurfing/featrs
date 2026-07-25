@@ -53,6 +53,7 @@ impl<T> DataFrameTransformer for T where
 /// ```
 pub struct Pipeline {
     steps: Vec<(String, Box<dyn DataFrameTransformer>)>,
+    fitted: bool,
 }
 
 impl Pipeline {
@@ -70,7 +71,10 @@ impl Pipeline {
                     .into(),
             ));
         }
-        Ok(Self { steps })
+        Ok(Self {
+            steps,
+            fitted: false,
+        })
     }
 
     /// Returns a reference to the pipeline steps.
@@ -79,10 +83,23 @@ impl Pipeline {
     }
 }
 
+fn wrap_step_error(e: Error, i: usize, name: &str, phase: &str) -> Error {
+    let msg = format!(
+        "Pipeline: step {} ('{}') failed during {}: {}",
+        i, name, phase, e,
+    );
+    match e {
+        Error::NotFitted(_) => Error::NotFitted(msg),
+        Error::InvalidInput(_) => Error::InvalidInput(msg),
+        Error::Computation(_) => Error::Computation(msg),
+    }
+}
+
 impl Fit<DataFrame> for Pipeline {
     type Output = ();
 
     fn fit(&mut self, x: DataFrame) -> Result<()> {
+        self.fitted = false;
         if x.height() == 0 {
             return Err(Error::InvalidInput(
                 "Pipeline.fit received a DataFrame with 0 rows.".into(),
@@ -92,21 +109,16 @@ impl Fit<DataFrame> for Pipeline {
         let n = self.steps.len();
         for (i, (name, transformer)) in self.steps.iter_mut().enumerate() {
             let is_last = i == n - 1;
-            transformer.fit(x_curr.clone()).map_err(|e| {
-                Error::Computation(format!(
-                    "Pipeline: step {} ('{}') failed during fit: {}",
-                    i, name, e
-                ))
-            })?;
+            transformer
+                .fit(x_curr.clone())
+                .map_err(|e| wrap_step_error(e, i, name, "fit"))?;
             if !is_last {
-                x_curr = transformer.transform(x_curr).map_err(|e| {
-                    Error::Computation(format!(
-                        "Pipeline: step {} ('{}') failed during intermediate transform: {}",
-                        i, name, e
-                    ))
-                })?;
+                x_curr = transformer
+                    .transform(x_curr)
+                    .map_err(|e| wrap_step_error(e, i, name, "intermediate transform"))?;
             }
         }
+        self.fitted = true;
         Ok(())
     }
 }
@@ -115,14 +127,18 @@ impl Transform<DataFrame> for Pipeline {
     type Output = DataFrame;
 
     fn transform(&self, x: DataFrame) -> Result<DataFrame> {
+        if !self.fitted {
+            return Err(Error::NotFitted(
+                "Pipeline has not been fitted. \
+                 Call .fit(dataframe) before .transform()."
+                    .into(),
+            ));
+        }
         let mut x_curr = x;
         for (i, (name, transformer)) in self.steps.iter().enumerate() {
-            x_curr = transformer.transform(x_curr).map_err(|e| {
-                Error::Computation(format!(
-                    "Pipeline: step {} ('{}') failed during transform: {}",
-                    i, name, e
-                ))
-            })?;
+            x_curr = transformer
+                .transform(x_curr)
+                .map_err(|e| wrap_step_error(e, i, name, "transform"))?;
         }
         Ok(x_curr)
     }
@@ -182,6 +198,63 @@ mod tests {
         let scaler = StandardScaler::new();
         let pipeline = Pipeline::new(vec![("scaler".into(), Box::new(scaler))]).unwrap();
         let df = make_test_df();
-        assert!(pipeline.transform(df).is_err());
+        let err = pipeline.transform(df).unwrap_err();
+        assert!(
+            matches!(err, Error::NotFitted(_)),
+            "expected NotFitted, got {err:?}",
+        );
+    }
+
+    #[test]
+    fn test_pipeline_fit_preserves_invalid_input() {
+        let scaler = StandardScaler::new();
+        let mut pipeline = Pipeline::new(vec![("scaler".into(), Box::new(scaler))]).unwrap();
+        let int_col = Column::from(Series::new("x".into(), &[1_i64, 2, 3]));
+        let df_no_f64 = DataFrame::new(3, vec![int_col]).unwrap();
+        let err = pipeline.fit(df_no_f64).unwrap_err();
+        assert!(
+            matches!(err, Error::InvalidInput(_)),
+            "expected InvalidInput, got {err:?}",
+        );
+    }
+
+    #[test]
+    fn test_pipeline_transform_preserves_invalid_input() {
+        let scaler = StandardScaler::new();
+        let mut pipeline = Pipeline::new(vec![("scaler".into(), Box::new(scaler))]).unwrap();
+        let df = make_test_df();
+        pipeline.fit(df.clone()).unwrap();
+
+        // Transform a dataframe missing column "a", causing an InvalidInput error.
+        let col_b = Column::from(Series::new("b".into(), &[2.0f64, 4.0, 6.0]));
+        let df_missing_a = DataFrame::new(3, vec![col_b]).unwrap();
+        let err = pipeline.transform(df_missing_a).unwrap_err();
+        assert!(
+            matches!(err, Error::InvalidInput(_)),
+            "expected InvalidInput, got {err:?}",
+        );
+    }
+
+    #[test]
+    fn test_pipeline_failed_refit_resets_fitted() {
+        let scaler = StandardScaler::new();
+        let mut pipeline = Pipeline::new(vec![("scaler".into(), Box::new(scaler))]).unwrap();
+        let df = make_test_df();
+
+        // First fit succeeds.
+        pipeline.fit(df.clone()).unwrap();
+        assert!(pipeline.transform(df.clone()).is_ok());
+
+        // Second fit on invalid data fails — fitted should be reset.
+        let int_col = Column::from(Series::new("x".into(), &[1_i64, 2, 3]));
+        let df_no_f64 = DataFrame::new(3, vec![int_col]).unwrap();
+        assert!(pipeline.fit(df_no_f64).is_err());
+
+        // Transform should now return NotFitted, not silently use old state.
+        let err = pipeline.transform(df).unwrap_err();
+        assert!(
+            matches!(err, Error::NotFitted(_)),
+            "expected NotFitted after failed refit, got {err:?}",
+        );
     }
 }
