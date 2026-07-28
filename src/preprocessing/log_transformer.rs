@@ -78,6 +78,7 @@ pub enum LogMethod {
 pub struct LogTransformer {
     fitted: bool,
     columns: Option<Vec<String>>,
+    fitted_columns: Vec<String>,
     method: LogMethod,
     check_positive: bool,
 }
@@ -89,6 +90,7 @@ impl LogTransformer {
         Self {
             fitted: false,
             columns: None,
+            fitted_columns: Vec::new(),
             method: LogMethod::Log1p,
             check_positive: true,
         }
@@ -246,8 +248,7 @@ impl Fit<DataFrame> for LogTransformer {
                         "LogTransformer.fit: column '{name}' has unexpected dtype. {e}"
                     ))
                 })?;
-                let bad_vals: Vec<f64> =
-                    ca.iter().flatten().filter(|v| *v <= threshold).collect();
+                let bad_vals: Vec<f64> = ca.iter().flatten().filter(|v| *v <= threshold).collect();
                 if !bad_vals.is_empty() {
                     let show: Vec<String> =
                         bad_vals.iter().take(5).map(|v| format!("{v}")).collect();
@@ -277,7 +278,7 @@ impl Fit<DataFrame> for LogTransformer {
             }
         }
 
-        self.columns = Some(resolved);
+        self.fitted_columns = resolved;
         self.fitted = true;
         Ok(())
     }
@@ -295,17 +296,9 @@ impl Transform<DataFrame> for LogTransformer {
             ));
         }
 
-        let cols = self.columns.as_ref().ok_or_else(|| {
-            Error::NotFitted(
-                "LogTransformer has not been fitted. \
-                 Call .fit(dataframe) before .transform()."
-                    .into(),
-            )
-        })?;
-
         let mut out = x.clone();
 
-        for name in cols {
+        for name in &self.fitted_columns {
             replace_f64_column(&mut out, name, "LogTransformer", |v| match self.method {
                 LogMethod::Ln => v.ln(),
                 LogMethod::Log1p => v.ln_1p(),
@@ -414,7 +407,10 @@ mod tests {
 
         let mut transformer = LogTransformer::new().method(LogMethod::Ln);
         let result = transformer.fit(df);
-        assert!(result.is_err(), "check_positive must reject non-positive values");
+        assert!(
+            result.is_err(),
+            "check_positive must reject non-positive values"
+        );
         let err = result.unwrap_err().to_string();
         assert!(err.contains("x"), "error must mention column 'x'");
         assert!(err.contains("y"), "error must mention column 'y'");
@@ -442,7 +438,10 @@ mod tests {
 
         let mut transformer = LogTransformer::new().method(LogMethod::Log1p);
         let result = transformer.fit(df);
-        assert!(result.is_err(), "Log1p with x = -1 must error when check_positive=true");
+        assert!(
+            result.is_err(),
+            "Log1p with x = -1 must error when check_positive=true"
+        );
     }
 
     #[test]
@@ -458,7 +457,10 @@ mod tests {
 
         let ca = result.column("x").unwrap().f64().unwrap();
         let val = ca.get(0).unwrap();
-        assert!(val.is_nan(), "Ln(-1) with check_positive=false must produce NaN");
+        assert!(
+            val.is_nan(),
+            "Ln(-1) with check_positive=false must produce NaN"
+        );
     }
 
     #[test]
@@ -479,10 +481,7 @@ mod tests {
 
     #[test]
     fn test_null_preservation() {
-        let x = Column::from(Series::new(
-            "x".into(),
-            &[Some(1.0f64), None, Some(E)],
-        ));
+        let x = Column::from(Series::new("x".into(), &[Some(1.0f64), None, Some(E)]));
         let df = DataFrame::new(3, vec![x]).unwrap();
 
         let mut transformer = LogTransformer::new().method(LogMethod::Ln);
@@ -492,7 +491,10 @@ mod tests {
         let ca = result.column("x").unwrap().f64().unwrap();
         let vals: Vec<Option<f64>> = ca.iter().collect();
         assert_relative_eq!(vals[0].unwrap(), 0.0, epsilon = 1e-12);
-        assert!(vals[1].is_none(), "null input must stay null through transform");
+        assert!(
+            vals[1].is_none(),
+            "null input must stay null through transform"
+        );
         assert_relative_eq!(vals[2].unwrap(), 1.0, epsilon = 1e-12);
     }
 
@@ -508,7 +510,10 @@ mod tests {
         let ca = result.column("x").unwrap().f64().unwrap();
         let vals: Vec<Option<f64>> = ca.iter().collect();
         assert_relative_eq!(vals[0].unwrap(), 0.0, epsilon = 1e-12);
-        assert!(vals[1].unwrap().is_nan(), "NaN input must propagate to NaN output");
+        assert!(
+            vals[1].unwrap().is_nan(),
+            "NaN input must propagate to NaN output"
+        );
         assert_relative_eq!(vals[2].unwrap(), 1.0, epsilon = 1e-12);
     }
 
@@ -550,14 +555,8 @@ mod tests {
         assert_relative_eq!(vals[2], (4.0f64).ln(), epsilon = 1e-12);
 
         // Other columns are untouched
-        assert_eq!(
-            result.column("i64_col").unwrap().dtype(),
-            &DataType::Int64
-        );
-        assert_eq!(
-            result.column("str_col").unwrap().dtype(),
-            &DataType::String
-        );
+        assert_eq!(result.column("i64_col").unwrap().dtype(), &DataType::Int64);
+        assert_eq!(result.column("str_col").unwrap().dtype(), &DataType::String);
     }
 
     #[test]
@@ -608,7 +607,10 @@ mod tests {
         let result = transformer.fit(df);
         assert!(result.is_err());
         let err = result.unwrap_err().to_string();
-        assert!(err.contains("expected Float64"), "error must mention expected dtype Float64, got: {err}");
+        assert!(
+            err.contains("expected Float64"),
+            "error must mention expected dtype Float64, got: {err}"
+        );
     }
 
     #[test]
@@ -618,10 +620,7 @@ mod tests {
 
         let mut transformer = LogTransformer::new();
         let result = transformer.fit(df);
-        assert!(
-            result.is_err(),
-            "fitting an all-null column must error"
-        );
+        assert!(result.is_err(), "fitting an all-null column must error");
     }
 
     #[test]
@@ -631,10 +630,7 @@ mod tests {
 
         let mut transformer = LogTransformer::new();
         let result = transformer.fit(df);
-        assert!(
-            result.is_err(),
-            "fitting an all-NaN column must error"
-        );
+        assert!(result.is_err(), "fitting an all-NaN column must error");
     }
 
     #[test]
@@ -739,7 +735,10 @@ mod tests {
         let df = DataFrame::new(1, vec![col]).unwrap();
         let mut t = LogTransformer::default();
         let result = t.fit(df);
-        assert!(result.is_ok(), "default LogTransformer must be Log1p (safe at zero)");
+        assert!(
+            result.is_ok(),
+            "default LogTransformer must be Log1p (safe at zero)"
+        );
     }
 
     #[test]
@@ -780,10 +779,7 @@ mod tests {
 
     #[test]
     fn test_partial_null_mixed_ok() {
-        let x = Column::from(Series::new(
-            "x".into(),
-            &[Some(1.0f64), None, Some(E)],
-        ));
+        let x = Column::from(Series::new("x".into(), &[Some(1.0f64), None, Some(E)]));
         let df = DataFrame::new(3, vec![x]).unwrap();
 
         let mut transformer = LogTransformer::new().method(LogMethod::Ln);
