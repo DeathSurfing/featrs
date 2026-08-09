@@ -106,8 +106,24 @@ fn test_end_to_end_encoders() {
     // OrdinalEncoder
     let mut oe = featrs::preprocessing::encoder::OrdinalEncoder::new();
     oe.fit(df.clone()).unwrap();
-    let ordinal = oe.transform(df).unwrap();
+    let ordinal = oe.transform(df.clone()).unwrap();
     assert_eq!(ordinal.width(), 2);
+
+    // CountEncoder
+    let mut ce = featrs::preprocessing::encoder::CountEncoder::new();
+    ce.fit(df.clone()).unwrap();
+    let counts = ce.transform(df).unwrap();
+    assert_eq!(counts.width(), 2);
+    // color: red x2, blue x1, green x1
+    let color_counts: Vec<u32> = counts
+        .column("color")
+        .unwrap()
+        .u32()
+        .unwrap()
+        .iter()
+        .flatten()
+        .collect();
+    assert_eq!(color_counts, vec![2, 1, 2, 1]);
 }
 
 #[test]

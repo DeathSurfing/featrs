@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `CountEncoder` for replacing categorical string values with their raw
+  occurrence counts (`u32`) learned from the training data. Categories unseen
+  at transform time are encoded as `0`, nulls are preserved as null, and the
+  output columns are `UInt32`. The integer-dtype counterpart to frequency
+  (proportion) encoding (#55).
+
 ### Fixed
 
 - `Pipeline` now tracks its own fitted state: `transform` before `fit`

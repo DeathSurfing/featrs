@@ -4,6 +4,7 @@
 //! - [`OneHotEncoder`] — create dummy/binary columns for each category
 //! - [`LabelEncoder`] — encode labels as `0..n_classes-1` integers
 //! - [`OrdinalEncoder`] — encode categorical features as integer columns
+//! - [`CountEncoder`] — replace categories with their raw occurrence counts
 
 use crate::traits::{Error, Fit, Result, Transform};
 use polars::prelude::*;
@@ -450,6 +451,163 @@ impl Transform<DataFrame> for OrdinalEncoder {
     }
 }
 
+/// Replace categorical string values with their raw occurrence counts.
+///
+/// Each category is replaced by the number of times it was observed in the
+/// training data (`fit`). This is useful when the popularity of a category is
+/// itself informative (e.g. "this city appears 457 times in our customer
+/// base"). Non-string columns are ignored.
+///
+/// Categories seen during `transform` but not during `fit` are encoded as
+/// `0`; null values are preserved as null. Output columns are `UInt32`.
+///
+/// Note: the output is an integer dtype. Many downstream transformers in this
+/// crate operate on `Float64` columns only (see `require_f64_columns`), so you
+/// may need to cast the result (e.g. `with_column(col("*").cast(Float64))`)
+/// before feeding it to a scaler or normalizer.
+///
+/// # Example
+///
+/// ```rust
+/// use featrs::preprocessing::encoder::CountEncoder;
+/// use featrs::traits::{Fit, Transform};
+/// use polars::prelude::{Column, DataFrame, NamedFrom, Series};
+///
+/// let col = Column::from(Series::new("color".into(), &["red", "blue", "red"]));
+/// let df = DataFrame::new(3, vec![col])?;
+///
+/// let mut enc = CountEncoder::new();
+/// enc.fit(df.clone())?;
+/// let encoded = enc.transform(df)?;
+/// assert_eq!(encoded.height(), 3);
+/// # Ok::<(), Box<dyn std::error::Error>>(())
+/// ```
+pub struct CountEncoder {
+    fitted: bool,
+    counts: Option<Vec<(String, HashMap<String, u32>)>>,
+}
+
+impl CountEncoder {
+    /// Create a new `CountEncoder`.
+    pub fn new() -> Self {
+        Self {
+            fitted: false,
+            counts: None,
+        }
+    }
+}
+
+impl Default for CountEncoder {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl Fit<DataFrame> for CountEncoder {
+    type Output = ();
+
+    fn fit(&mut self, x: DataFrame) -> Result<()> {
+        if x.height() == 0 {
+            return Err(Error::InvalidInput(
+                "CountEncoder.fit received a DataFrame with 0 rows. \
+                 Provide at least 1 row."
+                    .into(),
+            ));
+        }
+        let mut counts = Vec::new();
+
+        for col in x.columns() {
+            let name = col.name().to_string();
+            let ca = col.as_materialized_series().str().map_err(|e| {
+                Error::InvalidInput(format!(
+                    "CountEncoder.fit: column '{}' has dtype {}; expected String. {}",
+                    name,
+                    col.dtype(),
+                    e
+                ))
+            })?;
+
+            let mut mapping: HashMap<String, u32> = HashMap::new();
+            for opt in ca.iter().flatten() {
+                *mapping.entry(opt.to_string()).or_insert(0) += 1;
+            }
+
+            // Skip columns with no observed (non-null) category.
+            if mapping.is_empty() {
+                continue;
+            }
+
+            counts.push((name, mapping));
+        }
+
+        if counts.is_empty() {
+            return Err(Error::InvalidInput(
+                "CountEncoder.fit: no string columns found. \
+                 CountEncoder operates on String columns only."
+                    .into(),
+            ));
+        }
+
+        self.counts = Some(counts);
+        self.fitted = true;
+        Ok(())
+    }
+}
+
+impl Transform<DataFrame> for CountEncoder {
+    type Output = DataFrame;
+
+    fn transform(&self, x: DataFrame) -> Result<DataFrame> {
+        if !self.fitted {
+            return Err(Error::NotFitted(
+                "CountEncoder has not been fitted. \
+                 Call .fit(dataframe) before .transform()."
+                    .into(),
+            ));
+        }
+        let mut out_cols = Vec::new();
+
+        let counts = self.counts.as_ref().ok_or_else(|| {
+            Error::NotFitted(
+                "CountEncoder has not been fitted. \
+                 Call .fit(dataframe) before .transform()."
+                    .into(),
+            )
+        })?;
+
+        for (name, mapping) in counts {
+            let s = x.column(name.as_str()).map_err(|e| {
+                Error::InvalidInput(format!(
+                    "CountEncoder.transform: column '{}' not found. \
+                     The encoder was fitted on columns: {:?}. {}",
+                    name,
+                    counts.iter().map(|(n, _)| n).collect::<Vec<_>>(),
+                    e
+                ))
+            })?;
+            let ca = s.as_materialized_series().str().map_err(|e| {
+                Error::InvalidInput(format!(
+                    "CountEncoder.transform: column '{}' has dtype {}; expected String. {}",
+                    name,
+                    s.dtype(),
+                    e
+                ))
+            })?;
+
+            let encoded: ChunkedArray<UInt32Type> = ca
+                .iter()
+                .map(|opt| opt.map(|v| mapping.get(v).copied().unwrap_or(0)))
+                .collect();
+
+            let mut series = encoded.into_series();
+            series.rename(name.as_str().into());
+            out_cols.push(Column::from(series));
+        }
+
+        DataFrame::new(x.height(), out_cols).map_err(|e| Error::Computation(e.to_string()))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -536,5 +694,172 @@ mod tests {
             .flatten()
             .collect();
         assert_eq!(size_vals, vec![2, 1, 0, 1]);
+    }
+
+    #[test]
+    fn test_count_encoder_counts() {
+        let mut enc = CountEncoder::new();
+        let df = make_categorical_df();
+        let n_rows = df.height();
+
+        enc.fit(df.clone()).unwrap();
+        let result = enc.transform(df).unwrap();
+
+        // color: red x2, blue x1, green x1
+        let color_vals: Vec<u32> = result
+            .column("color")
+            .unwrap()
+            .u32()
+            .unwrap()
+            .iter()
+            .flatten()
+            .collect();
+        assert_eq!(color_vals, vec![2, 1, 2, 1]);
+
+        // size: S x1, M x2, L x1
+        let size_vals: Vec<u32> = result
+            .column("size")
+            .unwrap()
+            .u32()
+            .unwrap()
+            .iter()
+            .flatten()
+            .collect();
+        assert_eq!(size_vals, vec![1, 2, 1, 2]);
+
+        // Counts observed at each row sum to the number of fitted
+        // occurrences; every category's count appears exactly `count` times,
+        // so the per-column sum of (count * 1) over distinct categories
+        // equals n_rows. Here both columns cover all rows.
+        assert_eq!(result.height(), n_rows);
+    }
+
+    #[test]
+    fn test_count_encoder_counts_sum_to_n_rows() {
+        // Two-category column: counts for the distinct categories must sum to
+        // the number of rows.
+        let col = Column::from(Series::new("c".into(), &["a", "b", "a", "a", "b", "a"]));
+        let df = DataFrame::new(6, vec![col]).unwrap();
+        let n_rows = df.height();
+
+        let mut enc = CountEncoder::new();
+        enc.fit(df.clone()).unwrap();
+        let result = enc.transform(df).unwrap();
+
+        let vals: Vec<u32> = result
+            .column("c")
+            .unwrap()
+            .u32()
+            .unwrap()
+            .iter()
+            .flatten()
+            .collect();
+        // a x4, b x2
+        assert_eq!(vals, vec![4, 2, 4, 4, 2, 4]);
+
+        // Sum over distinct categories: 4 + 2 == n_rows.
+        let distinct_sum: u32 = {
+            let mut seen = std::collections::HashSet::new();
+            vals.iter().filter(|v| seen.insert(*v)).sum()
+        };
+        assert_eq!(distinct_sum as usize, n_rows);
+    }
+
+    #[test]
+    fn test_count_encoder_unseen_category_maps_to_zero() {
+        let mut enc = CountEncoder::new();
+        let train = DataFrame::new(
+            3,
+            vec![Column::from(Series::new("c".into(), &["a", "a", "b"]))],
+        )
+        .unwrap();
+        enc.fit(train).unwrap();
+
+        // "zzz" was never seen during fit -> 0.
+        let test = DataFrame::new(
+            3,
+            vec![Column::from(Series::new("c".into(), &["a", "zzz", "b"]))],
+        )
+        .unwrap();
+        let result = enc.transform(test).unwrap();
+
+        let vals: Vec<u32> = result
+            .column("c")
+            .unwrap()
+            .u32()
+            .unwrap()
+            .iter()
+            .flatten()
+            .collect();
+        assert_eq!(vals, vec![2, 0, 1]);
+    }
+
+    #[test]
+    fn test_count_encoder_not_fitted() {
+        let enc = CountEncoder::new();
+        let df = make_categorical_df();
+        let err = enc.transform(df).unwrap_err();
+        assert!(matches!(err, Error::NotFitted(_)));
+    }
+
+    #[test]
+    fn test_count_encoder_nulls_preserved() {
+        let mut enc = CountEncoder::new();
+        let col = Column::from(Series::new(
+            "c".into(),
+            &[Some("a"), None, Some("a"), Some("b")],
+        ));
+        let df = DataFrame::new(4, vec![col]).unwrap();
+
+        enc.fit(df.clone()).unwrap();
+        let result = enc.transform(df).unwrap();
+
+        let ca = result.column("c").unwrap().u32().unwrap();
+        let vals: Vec<Option<u32>> = ca.iter().collect();
+        // null stays null; nulls do not contribute to counts (a x2, b x1).
+        assert_eq!(vals, vec![Some(2), None, Some(2), Some(1)]);
+    }
+
+    #[test]
+    fn test_count_encoder_output_dtype_is_uint32() {
+        let mut enc = CountEncoder::new();
+        let df = make_categorical_df();
+        enc.fit(df.clone()).unwrap();
+        let result = enc.transform(df).unwrap();
+
+        assert_eq!(result.column("color").unwrap().dtype(), &DataType::UInt32);
+    }
+
+    #[test]
+    fn test_count_encoder_single_category_maps_to_n_rows() {
+        let col = Column::from(Series::new("c".into(), &["only", "only", "only"]));
+        let df = DataFrame::new(3, vec![col]).unwrap();
+
+        let mut enc = CountEncoder::new();
+        enc.fit(df.clone()).unwrap();
+        let result = enc.transform(df).unwrap();
+
+        let vals: Vec<u32> = result
+            .column("c")
+            .unwrap()
+            .u32()
+            .unwrap()
+            .iter()
+            .flatten()
+            .collect();
+        assert_eq!(vals, vec![3, 3, 3]);
+    }
+
+    #[test]
+    fn test_count_encoder_default_and_missing_column_error() {
+        let mut enc = CountEncoder::default();
+        let df = make_categorical_df();
+        enc.fit(df).unwrap();
+
+        // Transform a frame missing the fitted columns.
+        let other =
+            DataFrame::new(2, vec![Column::from(Series::new("x".into(), &["a", "b"]))]).unwrap();
+        let err = enc.transform(other).unwrap_err();
+        assert!(matches!(err, Error::InvalidInput(_)));
     }
 }
