@@ -517,6 +517,10 @@ impl Fit<DataFrame> for CountEncoder {
         let mut counts = Vec::new();
 
         for col in x.columns() {
+            // Non-string columns are ignored; only String columns are counted.
+            if col.dtype() != &DataType::String {
+                continue;
+            }
             let name = col.name().to_string();
             let ca = col.as_materialized_series().str().map_err(|e| {
                 Error::InvalidInput(format!(
@@ -860,6 +864,39 @@ mod tests {
         let other =
             DataFrame::new(2, vec![Column::from(Series::new("x".into(), &["a", "b"]))]).unwrap();
         let err = enc.transform(other).unwrap_err();
+        assert!(matches!(err, Error::InvalidInput(_)));
+    }
+
+    #[test]
+    fn test_count_encoder_skips_non_string_columns() {
+        let city = Column::from(Series::new("city".into(), &["a", "b", "a"]));
+        let x = Column::from(Series::new("x".into(), &[1.0f64, 2.0, 3.0]));
+        let df = DataFrame::new(3, vec![city, x]).unwrap();
+
+        let mut enc = CountEncoder::new();
+        enc.fit(df.clone()).unwrap();
+        let result = enc.transform(df).unwrap();
+
+        // Only the string column is encoded; the numeric column is ignored.
+        assert_eq!(result.width(), 1);
+        let vals: Vec<u32> = result
+            .column("city")
+            .unwrap()
+            .u32()
+            .unwrap()
+            .iter()
+            .flatten()
+            .collect();
+        assert_eq!(vals, vec![2, 1, 2]);
+    }
+
+    #[test]
+    fn test_count_encoder_no_string_columns_errors() {
+        let x = Column::from(Series::new("x".into(), &[1.0f64, 2.0, 3.0]));
+        let df = DataFrame::new(3, vec![x]).unwrap();
+
+        let mut enc = CountEncoder::new();
+        let err = enc.fit(df).unwrap_err();
         assert!(matches!(err, Error::InvalidInput(_)));
     }
 }
