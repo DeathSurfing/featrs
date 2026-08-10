@@ -61,6 +61,7 @@ pub mod prelude {
     pub use crate::pipeline::column_transformer::Remainder;
     pub use crate::preprocessing::auto_type::{AutoTypeDetector, ColumnType};
     pub use crate::preprocessing::binarizer::Binarizer;
+    pub use crate::preprocessing::constant_column_remover::ConstantColumnRemover;
     pub use crate::preprocessing::encoder::CountEncoder;
     pub use crate::preprocessing::encoder::LabelEncoder;
     pub use crate::preprocessing::encoder::OneHotEncoder;

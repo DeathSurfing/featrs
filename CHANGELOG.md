@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `ConstantColumnRemover` for removing columns that contain only a single
+  unique value (all dtypes). Supports an `ignore_nulls` toggle: by default
+  null-only columns are removed, with `ignore_nulls(false)` any column
+  containing a null is preserved (#64).
+
 ## [0.3.6] - 2026-08-10
 
 ### Added
