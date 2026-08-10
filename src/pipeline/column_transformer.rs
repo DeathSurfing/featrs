@@ -282,9 +282,11 @@ mod tests {
             matches!(&err, Error::NotFitted(_)),
             "expected NotFitted, got {err:?}",
         );
-        let msg = err.to_string();
-        assert!(msg.contains("ColumnTransformer"));
-        assert!(!msg.contains("StandardScaler"));
+        assert_eq!(
+            err.to_string(),
+            "not fitted: ColumnTransformer has not been fitted. \
+             Call .fit(dataframe) before .transform()."
+        );
     }
 
     #[test]
