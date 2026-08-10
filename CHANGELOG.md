@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.6] - 2026-08-10
+
 ### Added
 
 - `CountEncoder` for replacing categorical string values with their raw
@@ -14,6 +16,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   at transform time are encoded as `0`, nulls are preserved as null, and the
   output columns are `UInt32`. The integer-dtype counterpart to frequency
   (proportion) encoding (#55).
+- `LogTransformer` for applying logarithmic transformations (`ln`, `log1p`,
+  `log2`, `log10`, arbitrary base via `LogMethod::LogBase`) to `Float64`
+  columns, with auto-discovery of columns, configurable positive-value
+  validation, and null preservation (#70).
+- `QuantileTransformer` for transforming features to uniform or standard
+  normal distributions via quantile ranks, with configurable `n_quantiles`
+  and `OutputDistribution` (#104).
 
 ### Fixed
 
@@ -28,6 +37,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `"bias"` name with the synthetic bias column, returning a clear
   `InvalidInput` error at fit time instead of crashing on duplicate column
   names during transform (#41).
+- `ColumnTransformer.fit` now rejects overlapping column specs, returning a
+  clear `InvalidInput` error naming the colliding column and transformer at
+  fit time instead of surfacing a confusing hstack error during `transform`
+  (#36).
 
 ## [0.3.5] - 2026-07-12
 
@@ -190,7 +203,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Pipeline primitives: `Pipeline`, `ColumnTransformer` with `Remainder`.
 - Comprehensive API docs, module docs, and contributing guide.
 
-[Unreleased]: https://github.com/DeathSurfing/featrs/compare/v0.3.5...HEAD
+[Unreleased]: https://github.com/DeathSurfing/featrs/compare/v0.3.6...HEAD
+[0.3.6]: https://github.com/DeathSurfing/featrs/compare/v0.3.5...v0.3.6
 [0.3.5]: https://github.com/DeathSurfing/featrs/compare/v0.3.4...v0.3.5
 [0.3.4]: https://github.com/DeathSurfing/featrs/compare/v0.3.3...v0.3.4
 [0.3.3]: https://github.com/DeathSurfing/featrs/compare/v0.3.2...v0.3.3
