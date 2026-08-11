@@ -7,6 +7,7 @@
 pub mod auto_type;
 pub mod binarizer;
 pub mod constant_column_remover;
+pub mod duplicate_column_remover;
 pub mod encoder;
 pub mod feature_hasher;
 pub mod imputer;

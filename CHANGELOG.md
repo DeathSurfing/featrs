@@ -13,6 +13,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   unique value (all dtypes). Supports an `ignore_nulls` toggle: by default
   null-only columns are removed, with `ignore_nulls(false)` any column
   containing a null is preserved (#64).
+- `DuplicateColumnRemover` for removing columns that are perfect duplicates of
+  an earlier column (same dtype and values, keeping the first occurrence).
+  Supports a `consider_nulls` toggle: by default null positions must match
+  exactly, with `consider_nulls(true)` a null is treated as equal to any value
+  (#65).
 
 ## [0.3.6] - 2026-08-10
 
