@@ -38,6 +38,7 @@ pub enum Remainder {
 pub struct ColumnTransformer {
     transformers: Vec<(String, Box<dyn DataFrameTransformer>, Vec<String>)>,
     remainder: Remainder,
+    fitted: bool,
 }
 
 impl ColumnTransformer {
@@ -56,6 +57,7 @@ impl ColumnTransformer {
         Self {
             transformers,
             remainder,
+            fitted: false,
         }
     }
 
@@ -74,6 +76,7 @@ impl Fit<DataFrame> for ColumnTransformer {
     type Output = ();
 
     fn fit(&mut self, x: DataFrame) -> Result<()> {
+        self.fitted = false;
         if x.width() == 0 {
             return Err(Error::InvalidInput(
                 "ColumnTransformer.fit received a DataFrame with 0 columns.".into(),
@@ -116,6 +119,7 @@ impl Fit<DataFrame> for ColumnTransformer {
                 ))
             })?;
         }
+        self.fitted = true;
         Ok(())
     }
 }
@@ -124,6 +128,13 @@ impl Transform<DataFrame> for ColumnTransformer {
     type Output = DataFrame;
 
     fn transform(&self, x: DataFrame) -> Result<DataFrame> {
+        if !self.fitted {
+            return Err(Error::NotFitted(
+                "ColumnTransformer has not been fitted. \
+                 Call .fit(dataframe) before .transform()."
+                    .into(),
+            ));
+        }
         let mut parts: Vec<DataFrame> = Vec::new();
 
         for (t_name, transformer, columns) in &self.transformers {
@@ -266,7 +277,36 @@ mod tests {
             Remainder::Passthrough,
         );
         let df = make_test_df();
-        assert!(ct.transform(df).is_err());
+        let err = ct.transform(df).unwrap_err();
+        assert!(
+            matches!(&err, Error::NotFitted(_)),
+            "expected NotFitted, got {err:?}",
+        );
+        assert_eq!(
+            err.to_string(),
+            "not fitted: ColumnTransformer has not been fitted. \
+             Call .fit(dataframe) before .transform()."
+        );
+    }
+
+    #[test]
+    fn test_column_transformer_failed_refit_resets_fitted() {
+        let scaler = StandardScaler::new();
+        let mut ct = ColumnTransformer::new(
+            vec![("scale_a".into(), Box::new(scaler), vec!["a".into()])],
+            Remainder::Passthrough,
+        );
+        let df = make_test_df();
+
+        ct.fit(df.clone()).unwrap();
+        assert!(ct.transform(df.clone()).is_ok());
+
+        assert!(ct.fit(DataFrame::empty()).is_err());
+        let err = ct.transform(df).unwrap_err();
+        assert!(
+            matches!(err, Error::NotFitted(_)),
+            "expected NotFitted after failed refit, got {err:?}",
+        );
     }
 
     #[test]
