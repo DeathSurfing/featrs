@@ -107,11 +107,13 @@ fn columns_are_duplicates(a: &Column, b: &Column, consider_nulls: bool) -> Resul
         // Element-wise null-aware equality: null == null is true, null vs a
         // value is false (or null). OR with either-side null to make null
         // equal to any value. A comparison error (e.g. categoricals with
-        // distinct category objects) means "not duplicates", matching strict
-        // mode.
-        let eq = lhs
-            .equal_missing(rhs)
-            .unwrap_or_else(|_| BooleanChunked::full_null(PlSmallStr::EMPTY, lhs.len()));
+        // distinct category objects) means "not duplicates" — never remove a
+        // column on a failed comparison (an all-null mask would vacuously
+        // count as "all equal").
+        let eq = match lhs.equal_missing(rhs) {
+            Ok(eq) => eq,
+            Err(_) => return Ok(false),
+        };
         let either_null = &lhs.is_null() | &rhs.is_null();
         let permissive_eq = &eq | &either_null;
         Ok(permissive_eq.all())
@@ -145,12 +147,14 @@ impl Fit<DataFrame> for DuplicateColumnRemover {
         }
 
         let cols = x.columns();
-        // Keep the leftmost column of each duplicate group. Every column is
-        // compared only against already-kept columns, so the first column
-        // always survives and `selected` can never be empty.
+        // Keep the leftmost column of each duplicate group. Permissive null
+        // equality is not transitive, so every column is compared against ALL
+        // earlier input columns (not just survivors): a column that duplicates
+        // any earlier column is removed, keeping only the first. The first
+        // column always survives, so `selected` can never be empty.
         let mut survivors: Vec<usize> = Vec::new();
         'columns: for i in 0..cols.len() {
-            for &j in &survivors {
+            for j in 0..i {
                 if columns_are_duplicates(&cols[j], &cols[i], self.consider_nulls)? {
                     continue 'columns;
                 }
@@ -409,6 +413,36 @@ mod tests {
         strict.fit(df.clone()).unwrap();
         let result = strict.transform(df).unwrap();
         assert_eq!(result.width(), 2);
+    }
+
+    #[test]
+    fn test_permissive_mode_non_transitive_null_chain_keeps_only_first() {
+        // Permissive null equality is not transitive: [null,1] ~ [2,null] and
+        // [2,null] ~ [2,3], so the chain collapses to the first column only.
+        let a = Column::from(Series::new("a".into(), &[None, Some(1.0f64)]));
+        let b = Column::from(Series::new("b".into(), &[Some(2.0f64), None]));
+        let c = Column::from(Series::new("c".into(), &[Some(2.0f64), Some(3.0)]));
+        let df = DataFrame::new(2, vec![a, b, c]).unwrap();
+
+        let mut remover = DuplicateColumnRemover::new().consider_nulls(true);
+        remover.fit(df.clone()).unwrap();
+        let result = remover.transform(df).unwrap();
+
+        assert_eq!(result.width(), 1);
+        assert_eq!(result.get_column_names()[0].as_str(), "a");
+    }
+
+    #[test]
+    fn test_comparison_error_is_never_a_duplicate() {
+        // A failed polars comparison (here: different lengths, no broadcast)
+        // must be treated as "not duplicates" — never remove a column, and
+        // never fail the fit. Regression: an all-null fallback mask would
+        // vacuously count as "all equal" and drop a column.
+        let a = Column::from(Series::new("a".into(), &[1.0f64, 2.0, 3.0]));
+        let b = Column::from(Series::new("b".into(), &[4.0f64, 5.0]));
+
+        assert!(!columns_are_duplicates(&a, &b, true).unwrap());
+        assert!(!columns_are_duplicates(&a, &b, false).unwrap());
     }
 
     #[test]
