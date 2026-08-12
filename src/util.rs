@@ -123,3 +123,48 @@ pub(crate) fn series_mul(a: &Series, b: &Series, who: &str) -> Result<Series> {
         .collect();
     Ok(result.into_series())
 }
+
+/// Element-wise ratio of two `f64` series with an additive divisor floor.
+///
+/// Computes `a / (b + epsilon)` element-wise. The `epsilon` floor prevents
+/// division-by-zero producing `NaN`/`Inf` when the divisor is exactly `0.0`;
+/// set it to `0.0` to disable the floor (divisions by zero then yield
+/// `±Inf`/`NaN` per IEEE-754 semantics).
+///
+/// The floor is sign-aware: `epsilon` is applied with the divisor's sign
+/// (`b + copysign(epsilon, b)`), so a small negative divisor is moved
+/// further from zero and keeps its sign — it is never flipped positive. As a
+/// consequence the floor cannot be cancelled by a divisor of exactly
+/// `-epsilon`.
+///
+/// Precondition: `epsilon` must be finite and non-negative (callers are
+/// expected to validate this; a `NaN` epsilon would produce an all-`NaN`
+/// output).
+///
+/// `who` names the calling transformer for error context. The returned
+/// series has no name set yet (callers typically rename it). If either
+/// input is null at a given row, the output is null at that row; NaN
+/// values are propagated by the underlying `f64` division.
+pub(crate) fn series_div(a: &Series, b: &Series, epsilon: f64, who: &str) -> Result<Series> {
+    let ca_a = a.f64().map_err(|e| {
+        Error::Computation(format!(
+            "{who}: expected f64 series for column '{}'. {e}",
+            a.name()
+        ))
+    })?;
+    let ca_b = b.f64().map_err(|e| {
+        Error::Computation(format!(
+            "{who}: expected f64 series for column '{}'. {e}",
+            b.name()
+        ))
+    })?;
+    let result: ChunkedArray<Float64Type> = ca_a
+        .iter()
+        .zip(ca_b.iter())
+        .map(|(opt_a, opt_b)| match (opt_a, opt_b) {
+            (Some(va), Some(vb)) => Some(va / (vb + epsilon.copysign(vb))),
+            _ => None,
+        })
+        .collect();
+    Ok(result.into_series())
+}
