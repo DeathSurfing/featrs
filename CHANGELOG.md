@@ -19,7 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   exactly, with `consider_nulls(true)` a null is treated as equal to any value
   (#65).
 - `RatioFeatures` for creating element-wise ratio features (`a / b`) from
-  pairs of numeric columns, with lexicographic pair ordering, an optional
+  pairs of `Float64` columns, with lexicographic pair ordering, an optional
   reciprocal (`b / a`), and an `epsilon` floor on the divisor to avoid
   division-by-zero (#69).
 

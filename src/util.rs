@@ -129,8 +129,13 @@ pub(crate) fn series_mul(a: &Series, b: &Series, who: &str) -> Result<Series> {
 /// Computes `a / (b + epsilon)` element-wise. The `epsilon` floor prevents
 /// division-by-zero producing `NaN`/`Inf` when the divisor is exactly `0.0`;
 /// set it to `0.0` to disable the floor (divisions by zero then yield
-/// `±Inf`/`NaN` per IEEE-754 semantics). A divisor of exactly `-epsilon`
-/// cancels the floor and also yields `±Inf`/`NaN`.
+/// `±Inf`/`NaN` per IEEE-754 semantics).
+///
+/// The floor is sign-aware: `epsilon` is applied with the divisor's sign
+/// (`b + copysign(epsilon, b)`), so a small negative divisor is moved
+/// further from zero and keeps its sign — it is never flipped positive. As a
+/// consequence the floor cannot be cancelled by a divisor of exactly
+/// `-epsilon`.
 ///
 /// Precondition: `epsilon` must be finite and non-negative (callers are
 /// expected to validate this; a `NaN` epsilon would produce an all-`NaN`
@@ -157,7 +162,7 @@ pub(crate) fn series_div(a: &Series, b: &Series, epsilon: f64, who: &str) -> Res
         .iter()
         .zip(ca_b.iter())
         .map(|(opt_a, opt_b)| match (opt_a, opt_b) {
-            (Some(va), Some(vb)) => Some(va / (vb + epsilon)),
+            (Some(va), Some(vb)) => Some(va / (vb + epsilon.copysign(vb))),
             _ => None,
         })
         .collect();

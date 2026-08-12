@@ -27,12 +27,10 @@
 //! by zero then produce `±Inf`/`NaN` per IEEE-754 semantics. The floor
 //! slightly biases ratios whose divisor is very small.
 //!
-//! The floor only guards a divisor of exactly `0.0`: a divisor equal to
-//! exactly `-epsilon` still cancels the floor (`-epsilon + epsilon == 0.0`)
-//! and yields `±Inf`/`NaN`. With the default `epsilon`, this requires an
-//! input value of exactly `-1e-12`; it is asymmetric — the reciprocal of
-//! such a column is tiny but finite. Raise `epsilon` if adversarial or
-//! near-zero negative values are expected.
+//! The floor is sign-aware: it is applied with the divisor's sign
+//! (`col_j + copysign(epsilon, col_j)`), so divisors in `(-epsilon, 0)`
+//! stay negative and ratios keep their correct sign, and the floor can
+//! never be cancelled by a divisor of exactly `-epsilon`.
 //!
 //! # Null and `NaN` propagation
 //!
@@ -147,8 +145,11 @@ impl RatioFeatures {
     /// Default: `1e-12`. Each ratio is `col_i / (col_j + epsilon)`, so an
     /// exact-zero divisor yields a very large but finite value instead of
     /// `NaN`/`Inf`. Set `0.0` to disable the floor: divisions by zero then
-    /// produce `±Inf`/`NaN` per IEEE-754 semantics. A divisor equal to
-    /// exactly `-epsilon` also yields `±Inf`/`NaN` (the floor cancels).
+    /// produce `±Inf`/`NaN` per IEEE-754 semantics.
+    ///
+    /// The floor is sign-aware (applied as `copysign(epsilon, col_j)`), so
+    /// small negative divisors keep their sign instead of being flipped
+    /// positive.
     ///
     /// `epsilon` must be finite and non-negative; anything else makes
     /// [`fit`](Fit::fit) return [`Error::InvalidInput`].
@@ -733,19 +734,31 @@ mod tests {
     }
 
     #[test]
-    fn test_ratio_divisor_neg_epsilon_cancels_floor() {
-        // A divisor of exactly -epsilon cancels the floor: -1e-12 + 1e-12 == 0.0.
-        let a = Column::from(Series::new("a".into(), &[1.0_f64, -1.0]));
-        let b = Column::from(Series::new("b".into(), &[-1e-12_f64, -1e-12]));
-        let df = DataFrame::new(2, vec![a, b]).unwrap();
+    fn test_ratio_neg_divisor_in_floor_interval_keeps_sign() {
+        // Sign-aware floor (CodeRabbit #114): divisors in (-epsilon, 0)
+        // must stay negative so ratios keep their correct sign, and the
+        // floor is never cancelled by a divisor of exactly -epsilon.
+        let a = Column::from(Series::new("a".into(), &[1.0_f64, -1.0, 6.0]));
+        let b = Column::from(Series::new("b".into(), &[-5e-13_f64, -5e-13, -1e-12]));
+        let df = DataFrame::new(3, vec![a, b]).unwrap();
 
         let mut rf = RatioFeatures::new();
         rf.fit(df.clone()).unwrap();
         let out = rf.transform(df).unwrap();
 
         let vals = ratio_values(&out, "a_div_b");
-        assert_eq!(vals[0].unwrap(), f64::INFINITY);
-        assert_eq!(vals[1].unwrap(), f64::NEG_INFINITY);
+        // 1.0 / (-5e-13 - 1e-12) = 1.0 / -1.5e-12: negative and finite.
+        assert!(
+            vals[0].unwrap().is_sign_negative(),
+            "positive / small-negative divisor must stay negative"
+        );
+        assert!(vals[0].unwrap().is_finite());
+        // -1.0 / -1.5e-12: positive.
+        assert!(vals[1].unwrap().is_sign_positive());
+        // 6.0 / (-1e-12 - 1e-12) = 6.0 / -2e-12: no cancellation, finite.
+        assert!(vals[2].unwrap().is_sign_negative());
+        assert!(vals[2].unwrap().is_finite());
+        assert_relative_eq!(vals[2].unwrap(), 6.0 / -2e-12, epsilon = 1e-6);
     }
 
     #[test]
