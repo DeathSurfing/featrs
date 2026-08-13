@@ -82,6 +82,8 @@ pub mod prelude {
     pub use crate::preprocessing::polynomial_features::PolynomialFeaturesBuilder;
     pub use crate::preprocessing::quantile_transformer::OutputDistribution;
     pub use crate::preprocessing::quantile_transformer::QuantileTransformer;
+    pub use crate::preprocessing::rare_category_grouper::RareCategoryGrouper;
+    pub use crate::preprocessing::rare_category_grouper::Threshold;
     pub use crate::preprocessing::ratio_features::RatioFeatures;
     pub use crate::preprocessing::scaler::MinMaxScaler;
     pub use crate::preprocessing::scaler::RobustScaler;

@@ -31,6 +31,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `StringCleaner` for trimming and collapsing whitespace, normalizing Unicode
   case, and applying pre-compiled regex replacements to selected String
   columns while preserving nulls and the input schema (#67).
+- `RareCategoryGrouper` for relabeling infrequent categories in String columns
+  to a configurable `"Other"` label, with absolute-count (`MinCount`) or
+  relative-frequency (`MinFrequency`) thresholds. Rare and unseen categories
+  are grouped, nulls are preserved (or grouped via `treat_null_as_rare`), and
+  the column schema is unchanged (#66).
 
 ## [0.3.6] - 2026-08-10
 
