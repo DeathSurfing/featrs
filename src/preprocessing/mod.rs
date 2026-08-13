@@ -18,6 +18,7 @@ pub mod normalizer;
 pub mod polynomial_features;
 /// Quantile-based transformation to uniform or normal distribution.
 pub mod quantile_transformer;
+pub mod rare_category_grouper;
 pub mod ratio_features;
 pub mod scaler;
 pub mod string_cleaner;

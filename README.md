@@ -44,6 +44,7 @@ let scaled = scaler.transform(data)?;
 | | `CyclicalEncoder` | Sin/cos encoding for cyclical features (hour, month) |
 | | `FeatureHasher` | Hash strings into a fixed number of buckets |
 | | `StringCleaner` | Trim, normalize case, and regex-replace string values |
+| | `RareCategoryGrouper` | Group rare and unseen categories into `"Other"` |
 | **Imputation** | `SimpleImputer` | Fill nulls with mean, median, mode, or constant |
 | | `MissingIndicator` | Binary columns marking where values were missing |
 | **Feature Generation** | `PolynomialFeatures` | Generate polynomial and interaction features |
