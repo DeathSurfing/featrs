@@ -13,6 +13,7 @@ categories = ["science", "data-structures"]
 
 [dependencies]
 polars = "0.54"
+regex = "1"
 statrs = "0.19"
 thiserror = "2"
 

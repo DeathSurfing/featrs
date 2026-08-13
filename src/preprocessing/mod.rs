@@ -20,3 +20,4 @@ pub mod polynomial_features;
 pub mod quantile_transformer;
 pub mod ratio_features;
 pub mod scaler;
+pub mod string_cleaner;

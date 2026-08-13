@@ -43,6 +43,7 @@ let scaled = scaler.transform(data)?;
 | | `FrequencyEncoder` | Replace categories with their observed relative frequencies |
 | | `CyclicalEncoder` | Sin/cos encoding for cyclical features (hour, month) |
 | | `FeatureHasher` | Hash strings into a fixed number of buckets |
+| | `StringCleaner` | Trim, normalize case, and regex-replace string values |
 | **Imputation** | `SimpleImputer` | Fill nulls with mean, median, mode, or constant |
 | | `MissingIndicator` | Binary columns marking where values were missing |
 | **Feature Generation** | `PolynomialFeatures` | Generate polynomial and interaction features |
