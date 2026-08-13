@@ -86,6 +86,7 @@ pub mod prelude {
     pub use crate::preprocessing::scaler::MinMaxScaler;
     pub use crate::preprocessing::scaler::RobustScaler;
     pub use crate::preprocessing::scaler::StandardScaler;
+    pub use crate::preprocessing::string_cleaner::{CaseStyle, StringCleaner, StringReplacement};
     pub use crate::time_series::cyclical::CyclicalEncoder;
     pub use crate::time_series::diff::Difference;
     pub use crate::time_series::lag::Lagger;

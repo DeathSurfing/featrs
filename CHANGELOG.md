@@ -28,6 +28,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   observations per column (so they sum to approximately `1.0`), categories
   unseen at transform time are encoded as `0.0`, nulls are preserved as null,
   and the output columns are `Float64` (#54).
+- `StringCleaner` for trimming and collapsing whitespace, normalizing Unicode
+  case, and applying pre-compiled regex replacements to selected String
+  columns while preserving nulls and the input schema (#67).
 
 ## [0.3.6] - 2026-08-10
 
