@@ -22,6 +22,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   pairs of `Float64` columns, with lexicographic pair ordering, an optional
   reciprocal (`b / a`), and an `epsilon` floor on the divisor to avoid
   division-by-zero (#69).
+- `FrequencyEncoder` for replacing categorical string values with their
+  observed relative frequencies (proportions in `[0, 1]`) learned from the
+  training data. Frequencies are normalized by the number of non-null
+  observations per column (so they sum to approximately `1.0`), categories
+  unseen at transform time are encoded as `0.0`, nulls are preserved as null,
+  and the output columns are `Float64` (#54).
 
 ## [0.3.6] - 2026-08-10
 
