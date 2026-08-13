@@ -24,7 +24,8 @@ pub enum CaseStyle {
     Title,
     /// Capitalize each whitespace-separated word and join the words directly.
     ///
-    /// For example, `"hello world"` becomes `"HelloWorld"`.
+    /// This produces PascalCase (upper camel case): for example,
+    /// `"hello world"` becomes `"HelloWorld"`.
     Camel,
 }
 
@@ -98,9 +99,17 @@ impl StringCleaner {
     }
 
     /// Select the `String` columns to clean.
+    ///
+    /// Duplicate names are ignored after their first occurrence so each
+    /// selected column is cleaned exactly once.
     pub fn columns(mut self, cols: &[&str]) -> Self {
         self.invalidate_fit();
-        self.columns = cols.iter().map(|column| (*column).to_owned()).collect();
+        self.columns.clear();
+        for column in cols {
+            if !self.columns.iter().any(|selected| selected == column) {
+                self.columns.push((*column).to_owned());
+            }
+        }
         self
     }
 
@@ -315,7 +324,8 @@ mod tests {
 
     fn frame(values: &[Option<&str>]) -> DataFrame {
         let text = Column::from(Series::new("text".into(), values));
-        let number = Column::from(Series::new("number".into(), &[1_i64, 2, 3]));
+        let numbers = vec![0_i64; values.len()];
+        let number = Column::from(Series::new("number".into(), numbers));
         DataFrame::new(values.len(), vec![text, number]).unwrap()
     }
 
@@ -519,6 +529,20 @@ mod tests {
         );
         assert_eq!(result.get_column_names()[0].as_str(), "first");
         assert_eq!(result.get_column_names()[1].as_str(), "second");
+    }
+
+    #[test]
+    fn test_duplicate_column_names_are_cleaned_once() {
+        let df = frame(&[Some("a"), Some("b"), Some("c")]);
+        let mut cleaner = StringCleaner::new()
+            .columns(&["text", "text"])
+            .replace("a", "aa");
+        cleaner.fit(df.clone()).unwrap();
+
+        assert_eq!(
+            values(&cleaner.transform(df).unwrap()),
+            vec![Some("aa".into()), Some("b".into()), Some("c".into())]
+        );
     }
 
     #[test]
