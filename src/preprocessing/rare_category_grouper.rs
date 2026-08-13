@@ -17,15 +17,17 @@ pub enum Threshold {
     /// Keep every category that appears at least `n` times.
     ///
     /// Categories with `count < n` are relabeled. `MinCount(0)` and
-    /// `MinCount(1)` keep every observed category (a no-op).
+    /// `MinCount(1)` keep every category observed at fit time; categories
+    /// unseen at transform time are still relabeled.
     MinCount(u32),
     /// Keep every category whose relative frequency is at least `p`.
     ///
     /// Frequencies are computed against the number of non-null values in the
     /// column, so observed frequencies sum to approximately `1.0`. `p` must be
-    /// finite and in `[0, 1]`; `MinFrequency(0.0)` keeps every category (a
-    /// no-op) and `MinFrequency(1.0)` keeps only categories that own the whole
-    /// non-null column.
+    /// finite and in `[0, 1]`; `MinFrequency(0.0)` keeps every category
+    /// observed at fit time (unseen categories are still relabeled) and
+    /// `MinFrequency(1.0)` keeps only categories that own the whole non-null
+    /// column.
     MinFrequency(f64),
 }
 
@@ -169,8 +171,7 @@ impl Fit<DataFrame> for RareCategoryGrouper {
 
     fn fit(&mut self, x: DataFrame) -> Result<()> {
         // Reset first so a failed re-fit cannot leave stale state behind.
-        self.fitted = false;
-        self.kept_sets = None;
+        self.invalidate_fit();
 
         if x.height() == 0 || x.width() == 0 {
             return Err(Error::InvalidInput(
@@ -248,13 +249,6 @@ impl Transform<DataFrame> for RareCategoryGrouper {
     type Output = DataFrame;
 
     fn transform(&self, x: DataFrame) -> Result<Self::Output> {
-        if !self.fitted {
-            return Err(Error::NotFitted(
-                "RareCategoryGrouper has not been fitted. \
-                 Call .fit(dataframe) before .transform()."
-                    .into(),
-            ));
-        }
         let kept_sets = self.kept_sets.as_ref().ok_or_else(|| {
             Error::NotFitted(
                 "RareCategoryGrouper has not been fitted. \
@@ -479,48 +473,42 @@ mod tests {
     }
 
     #[test]
-    fn test_zero_threshold_is_pass_through() {
-        let df = frame(&[Some("a"), Some("b"), Some("a")]);
+    fn test_pass_through_thresholds_keep_fit_categories() {
+        // MinCount(0), MinCount(1) and MinFrequency(0.0) keep every category
+        // observed at fit time.
+        for threshold in [
+            Threshold::MinCount(0),
+            Threshold::MinCount(1),
+            Threshold::MinFrequency(0.0),
+        ] {
+            let df = frame(&[Some("a"), Some("b"), Some("a")]);
+            let mut grouper = RareCategoryGrouper::new()
+                .columns(&["city"])
+                .threshold(threshold);
+            grouper.fit(df.clone()).unwrap();
+            let result = grouper.transform(df).unwrap();
+
+            let out = values(&result);
+            assert_eq!(out[0].as_deref(), Some("a"));
+            assert_eq!(out[1].as_deref(), Some("b"));
+            assert_eq!(out[2].as_deref(), Some("a"));
+        }
+    }
+
+    #[test]
+    fn test_pass_through_threshold_unseen_still_relabeled() {
+        // Even with a pass-through threshold, categories unseen at transform
+        // time are relabeled; the "no-op" promise only covers fit-time data.
+        let fit_df = frame(&[Some("a"), Some("a")]);
         let mut grouper = RareCategoryGrouper::new()
             .columns(&["city"])
             .threshold(Threshold::MinCount(0));
-        grouper.fit(df.clone()).unwrap();
-        let result = grouper.transform(df).unwrap();
+        grouper.fit(fit_df).unwrap();
 
+        let result = grouper.transform(frame(&[Some("a"), Some("zzz")])).unwrap();
         let out = values(&result);
         assert_eq!(out[0].as_deref(), Some("a"));
-        assert_eq!(out[1].as_deref(), Some("b"));
-        assert_eq!(out[2].as_deref(), Some("a"));
-    }
-
-    #[test]
-    fn test_min_count_one_is_pass_through() {
-        let df = frame(&[Some("a"), Some("b"), Some("a")]);
-        let mut grouper = RareCategoryGrouper::new()
-            .columns(&["city"])
-            .threshold(Threshold::MinCount(1));
-        grouper.fit(df.clone()).unwrap();
-        let result = grouper.transform(df).unwrap();
-
-        let out = values(&result);
-        assert_eq!(out[0].as_deref(), Some("a"));
-        assert_eq!(out[1].as_deref(), Some("b"));
-        assert_eq!(out[2].as_deref(), Some("a"));
-    }
-
-    #[test]
-    fn test_zero_frequency_threshold_is_pass_through() {
-        let df = frame(&[Some("a"), Some("b"), Some("a")]);
-        let mut grouper = RareCategoryGrouper::new()
-            .columns(&["city"])
-            .threshold(Threshold::MinFrequency(0.0));
-        grouper.fit(df.clone()).unwrap();
-        let result = grouper.transform(df).unwrap();
-
-        let out = values(&result);
-        assert_eq!(out[0].as_deref(), Some("a"));
-        assert_eq!(out[1].as_deref(), Some("b"));
-        assert_eq!(out[2].as_deref(), Some("a"));
+        assert_eq!(out[1].as_deref(), Some("Other"));
     }
 
     #[test]
@@ -573,28 +561,17 @@ mod tests {
 
     #[test]
     fn test_min_frequency_out_of_range_errors() {
-        let df = frame(&[Some("a"), Some("b")]);
-        let mut grouper = RareCategoryGrouper::new()
-            .columns(&["city"])
-            .threshold(Threshold::MinFrequency(1.5));
-        let err = grouper.fit(df).unwrap_err();
-        assert!(
-            err.to_string().contains("out of range"),
-            "unexpected error: {err}"
-        );
-    }
-
-    #[test]
-    fn test_min_frequency_negative_errors() {
-        let df = frame(&[Some("a"), Some("b")]);
-        let mut grouper = RareCategoryGrouper::new()
-            .columns(&["city"])
-            .threshold(Threshold::MinFrequency(-0.1));
-        let err = grouper.fit(df).unwrap_err();
-        assert!(
-            err.to_string().contains("out of range"),
-            "unexpected error: {err}"
-        );
+        for p in [1.5, -0.1, f64::NAN] {
+            let df = frame(&[Some("a"), Some("b")]);
+            let mut grouper = RareCategoryGrouper::new()
+                .columns(&["city"])
+                .threshold(Threshold::MinFrequency(p));
+            let err = grouper.fit(df).unwrap_err();
+            assert!(
+                err.to_string().contains("out of range"),
+                "unexpected error for p={p}: {err}"
+            );
+        }
     }
 
     #[test]
@@ -794,18 +771,5 @@ mod tests {
 
         let out = values(&result);
         assert!(out.iter().all(|v| v.is_none()));
-    }
-
-    #[test]
-    fn test_min_frequency_nan_errors() {
-        let df = frame(&[Some("a"), Some("b")]);
-        let mut grouper = RareCategoryGrouper::new()
-            .columns(&["city"])
-            .threshold(Threshold::MinFrequency(f64::NAN));
-        let err = grouper.fit(df).unwrap_err();
-        assert!(
-            err.to_string().contains("out of range"),
-            "unexpected error: {err}"
-        );
     }
 }
