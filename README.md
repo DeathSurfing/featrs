@@ -40,6 +40,7 @@ let scaled = scaler.transform(data)?;
 | | `LabelEncoder` | Encode labels as `0..n_classes-1` integers |
 | | `OrdinalEncoder` | Per-column category → integer encoding |
 | | `CountEncoder` | Replace categories with their raw occurrence counts |
+| | `FrequencyEncoder` | Replace categories with their observed relative frequencies |
 | | `CyclicalEncoder` | Sin/cos encoding for cyclical features (hour, month) |
 | | `FeatureHasher` | Hash strings into a fixed number of buckets |
 | **Imputation** | `SimpleImputer` | Fill nulls with mean, median, mode, or constant |

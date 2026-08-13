@@ -5,6 +5,7 @@
 //! - [`LabelEncoder`] — encode labels as `0..n_classes-1` integers
 //! - [`OrdinalEncoder`] — encode categorical features as integer columns
 //! - [`CountEncoder`] — replace categories with their raw occurrence counts
+//! - [`FrequencyEncoder`] — replace categories with their observed relative frequencies
 
 use crate::traits::{Error, Fit, Result, Transform};
 use polars::prelude::*;
@@ -612,9 +613,195 @@ impl Transform<DataFrame> for CountEncoder {
     }
 }
 
+/// Replace categorical string values with their observed relative frequencies.
+///
+/// Each category is replaced by its relative frequency — the number of times it
+/// was observed in the training data divided by the total number of non-null
+/// observations in that column — so the encoded values of a column sum to
+/// approximately `1.0` (up to floating-point rounding). This is the
+/// proportion-based counterpart to [`CountEncoder`]: raw counts are normalized
+/// by the column total. Non-string columns are ignored.
+///
+/// Categories seen during `transform` but not during `fit` are encoded as
+/// `0.0`; null values are preserved as null. Output columns are `Float64`.
+///
+/// # Example
+///
+/// ```rust
+/// use featrs::preprocessing::encoder::FrequencyEncoder;
+/// use featrs::traits::{Fit, Transform};
+/// use polars::prelude::{Column, DataFrame, NamedFrom, Series};
+///
+/// let col = Column::from(Series::new("color".into(), &["red", "blue", "red"]));
+/// let df = DataFrame::new(3, vec![col])?;
+///
+/// let mut enc = FrequencyEncoder::new();
+/// enc.fit(df.clone())?;
+/// let encoded = enc.transform(df)?;
+/// assert_eq!(encoded.height(), 3);
+/// # Ok::<(), Box<dyn std::error::Error>>(())
+/// ```
+pub struct FrequencyEncoder {
+    fitted: bool,
+    column_names: Option<Vec<String>>,
+    mappings: Option<Vec<HashMap<String, f64>>>,
+}
+
+impl FrequencyEncoder {
+    /// Create a new `FrequencyEncoder`.
+    pub fn new() -> Self {
+        Self {
+            fitted: false,
+            column_names: None,
+            mappings: None,
+        }
+    }
+}
+
+impl Default for FrequencyEncoder {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl Fit<DataFrame> for FrequencyEncoder {
+    type Output = ();
+
+    fn fit(&mut self, x: DataFrame) -> Result<()> {
+        // Reset any previously learned state so a failed re-fit cannot leave
+        // stale mappings behind.
+        self.fitted = false;
+        self.column_names = None;
+        self.mappings = None;
+
+        if x.height() == 0 {
+            return Err(Error::InvalidInput(
+                "FrequencyEncoder.fit received a DataFrame with 0 rows. \
+                 Provide at least 1 row."
+                    .into(),
+            ));
+        }
+
+        let mut names = Vec::new();
+        let mut mappings = Vec::new();
+
+        for col in x.columns() {
+            // Non-string columns are ignored; only String columns are encoded.
+            if col.dtype() != &DataType::String {
+                continue;
+            }
+            let name = col.name().to_string();
+            let ca = col.as_materialized_series().str().map_err(|e| {
+                Error::InvalidInput(format!(
+                    "FrequencyEncoder.fit: column '{}' has dtype {}; expected String. {}",
+                    name,
+                    col.dtype(),
+                    e
+                ))
+            })?;
+
+            let mut mapping: HashMap<String, f64> = HashMap::new();
+            let mut total: u64 = 0;
+            for opt in ca.iter().flatten() {
+                *mapping.entry(opt.to_string()).or_insert(0.0) += 1.0;
+                total += 1;
+            }
+
+            // Skip columns with no observed (non-null) category.
+            if mapping.is_empty() {
+                continue;
+            }
+
+            // Normalize counts to relative frequencies (proportions in [0, 1]).
+            // The denominator is the number of non-null observations, so the
+            // frequencies of a column sum to 1.0 even when nulls are present.
+            let total_f = total as f64;
+            for v in mapping.values_mut() {
+                *v /= total_f;
+            }
+
+            names.push(name);
+            mappings.push(mapping);
+        }
+
+        if names.is_empty() {
+            return Err(Error::InvalidInput(
+                "FrequencyEncoder.fit: no string columns found. \
+                 FrequencyEncoder operates on String columns only."
+                    .into(),
+            ));
+        }
+
+        self.column_names = Some(names);
+        self.mappings = Some(mappings);
+        self.fitted = true;
+        Ok(())
+    }
+}
+
+impl Transform<DataFrame> for FrequencyEncoder {
+    type Output = DataFrame;
+
+    fn transform(&self, x: DataFrame) -> Result<DataFrame> {
+        if !self.fitted {
+            return Err(Error::NotFitted(
+                "FrequencyEncoder has not been fitted. \
+                 Call .fit(dataframe) before .transform()."
+                    .into(),
+            ));
+        }
+        let mut out_cols = Vec::new();
+
+        let names = self.column_names.as_ref().ok_or_else(|| {
+            Error::NotFitted(
+                "FrequencyEncoder has not been fitted. \
+                 Call .fit(dataframe) before .transform()."
+                    .into(),
+            )
+        })?;
+        let mappings = self.mappings.as_ref().ok_or_else(|| {
+            Error::NotFitted(
+                "FrequencyEncoder has not been fitted. \
+                 Call .fit(dataframe) before .transform()."
+                    .into(),
+            )
+        })?;
+
+        for (name, mapping) in names.iter().zip(mappings.iter()) {
+            let s = x.column(name.as_str()).map_err(|e| {
+                Error::InvalidInput(format!(
+                    "FrequencyEncoder.transform: column '{}' not found. \
+                     The encoder was fitted on columns: {:?}. {}",
+                    name, names, e
+                ))
+            })?;
+            let ca = s.as_materialized_series().str().map_err(|e| {
+                Error::InvalidInput(format!(
+                    "FrequencyEncoder.transform: column '{}' has dtype {}; expected String. {}",
+                    name,
+                    s.dtype(),
+                    e
+                ))
+            })?;
+
+            let encoded: ChunkedArray<Float64Type> = ca
+                .iter()
+                .map(|opt| opt.map(|v| mapping.get(v).copied().unwrap_or(0.0)))
+                .collect();
+
+            let mut series = encoded.into_series();
+            series.rename(name.as_str().into());
+            out_cols.push(Column::from(series));
+        }
+
+        DataFrame::new(x.height(), out_cols).map_err(|e| Error::Computation(e.to_string()))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use approx::assert_relative_eq;
 
     fn make_categorical_df() -> DataFrame {
         let a = Column::from(Series::new(
@@ -898,5 +1085,253 @@ mod tests {
         let mut enc = CountEncoder::new();
         let err = enc.fit(df).unwrap_err();
         assert!(matches!(err, Error::InvalidInput(_)));
+    }
+
+    #[test]
+    fn test_frequency_encoder_unequal_counts() {
+        let mut enc = FrequencyEncoder::new();
+        let col = Column::from(Series::new("c".into(), &["a", "b", "a", "a"]));
+        let df = DataFrame::new(4, vec![col]).unwrap();
+
+        enc.fit(df.clone()).unwrap();
+        let result = enc.transform(df).unwrap();
+
+        let vals: Vec<f64> = result
+            .column("c")
+            .unwrap()
+            .f64()
+            .unwrap()
+            .iter()
+            .flatten()
+            .collect();
+        // a x3/4, b x1/4
+        assert_eq!(vals, vec![0.75, 0.25, 0.75, 0.75]);
+    }
+
+    #[test]
+    fn test_frequency_encoder_equal_counts() {
+        let mut enc = FrequencyEncoder::new();
+        let col = Column::from(Series::new("c".into(), &["a", "b", "c"]));
+        let df = DataFrame::new(3, vec![col]).unwrap();
+
+        enc.fit(df.clone()).unwrap();
+        let result = enc.transform(df).unwrap();
+
+        let vals: Vec<f64> = result
+            .column("c")
+            .unwrap()
+            .f64()
+            .unwrap()
+            .iter()
+            .flatten()
+            .collect();
+        for v in vals {
+            assert_relative_eq!(v, 1.0 / 3.0, epsilon = 1e-12);
+        }
+    }
+
+    #[test]
+    fn test_frequency_encoder_single_category_maps_to_one() {
+        let mut enc = FrequencyEncoder::new();
+        let col = Column::from(Series::new("c".into(), &["only", "only", "only"]));
+        let df = DataFrame::new(3, vec![col]).unwrap();
+
+        enc.fit(df.clone()).unwrap();
+        let result = enc.transform(df).unwrap();
+
+        let vals: Vec<f64> = result
+            .column("c")
+            .unwrap()
+            .f64()
+            .unwrap()
+            .iter()
+            .flatten()
+            .collect();
+        assert_eq!(vals, vec![1.0, 1.0, 1.0]);
+    }
+
+    #[test]
+    fn test_frequency_encoder_unseen_category_maps_to_zero() {
+        let mut enc = FrequencyEncoder::new();
+        let train = DataFrame::new(
+            3,
+            vec![Column::from(Series::new("c".into(), &["a", "a", "b"]))],
+        )
+        .unwrap();
+        enc.fit(train).unwrap();
+
+        // "zzz" was never seen during fit -> 0.0.
+        let test = DataFrame::new(
+            3,
+            vec![Column::from(Series::new("c".into(), &["a", "zzz", "b"]))],
+        )
+        .unwrap();
+        let result = enc.transform(test).unwrap();
+
+        let vals: Vec<f64> = result
+            .column("c")
+            .unwrap()
+            .f64()
+            .unwrap()
+            .iter()
+            .flatten()
+            .collect();
+        // a x2/3, b x1/3, unseen -> 0.0
+        assert_relative_eq!(vals[0], 2.0 / 3.0, epsilon = 1e-12);
+        assert_eq!(vals[1], 0.0);
+        assert_relative_eq!(vals[2], 1.0 / 3.0, epsilon = 1e-12);
+    }
+
+    #[test]
+    fn test_frequency_encoder_nulls_preserved() {
+        let mut enc = FrequencyEncoder::new();
+        let col = Column::from(Series::new(
+            "c".into(),
+            &[Some("a"), None, Some("a"), Some("b")],
+        ));
+        let df = DataFrame::new(4, vec![col]).unwrap();
+
+        enc.fit(df.clone()).unwrap();
+        let result = enc.transform(df).unwrap();
+
+        let ca = result.column("c").unwrap().f64().unwrap();
+        let vals: Vec<Option<f64>> = ca.iter().collect();
+        // null stays null; the denominator counts non-null values only (3),
+        // so frequencies still sum to ~1.0: a x2/3, b x1/3.
+        assert_relative_eq!(vals[0].unwrap(), 2.0 / 3.0, epsilon = 1e-12);
+        assert_eq!(vals[1], None);
+        assert_relative_eq!(vals[2].unwrap(), 2.0 / 3.0, epsilon = 1e-12);
+        assert_relative_eq!(vals[3].unwrap(), 1.0 / 3.0, epsilon = 1e-12);
+    }
+
+    #[test]
+    fn test_frequency_encoder_not_fitted() {
+        let enc = FrequencyEncoder::new();
+        let df = make_categorical_df();
+        let err = enc.transform(df).unwrap_err();
+        assert!(matches!(err, Error::NotFitted(_)));
+    }
+
+    #[test]
+    fn test_frequency_encoder_empty_input_errors() {
+        let mut enc = FrequencyEncoder::new();
+        let df = DataFrame::new(0, Vec::<Column>::new()).unwrap();
+        let err = enc.fit(df).unwrap_err();
+        assert!(matches!(err, Error::InvalidInput(_)));
+    }
+
+    #[test]
+    fn test_frequency_encoder_output_dtype_is_float64() {
+        let mut enc = FrequencyEncoder::new();
+        let df = make_categorical_df();
+        enc.fit(df.clone()).unwrap();
+        let result = enc.transform(df).unwrap();
+
+        assert_eq!(result.column("color").unwrap().dtype(), &DataType::Float64);
+        assert_eq!(result.column("size").unwrap().dtype(), &DataType::Float64);
+    }
+
+    #[test]
+    fn test_frequency_encoder_skips_non_string_columns() {
+        let city = Column::from(Series::new("city".into(), &["a", "b", "a"]));
+        let x = Column::from(Series::new("x".into(), &[1.0f64, 2.0, 3.0]));
+        let df = DataFrame::new(3, vec![city, x]).unwrap();
+
+        let mut enc = FrequencyEncoder::new();
+        enc.fit(df.clone()).unwrap();
+        let result = enc.transform(df).unwrap();
+
+        // Only the string column is encoded; the numeric column is ignored.
+        assert_eq!(result.width(), 1);
+        let vals: Vec<f64> = result
+            .column("city")
+            .unwrap()
+            .f64()
+            .unwrap()
+            .iter()
+            .flatten()
+            .collect();
+        assert_relative_eq!(vals[0], 2.0 / 3.0, epsilon = 1e-12);
+        assert_relative_eq!(vals[1], 1.0 / 3.0, epsilon = 1e-12);
+        assert_relative_eq!(vals[2], 2.0 / 3.0, epsilon = 1e-12);
+    }
+
+    #[test]
+    fn test_frequency_encoder_no_string_columns_errors() {
+        let x = Column::from(Series::new("x".into(), &[1.0f64, 2.0, 3.0]));
+        let df = DataFrame::new(3, vec![x]).unwrap();
+
+        let mut enc = FrequencyEncoder::new();
+        let err = enc.fit(df).unwrap_err();
+        assert!(matches!(err, Error::InvalidInput(_)));
+    }
+
+    #[test]
+    fn test_frequency_encoder_default_and_missing_column_error() {
+        let mut enc = FrequencyEncoder::default();
+        let df = make_categorical_df();
+        enc.fit(df).unwrap();
+
+        // Transform a frame missing the fitted columns.
+        let other =
+            DataFrame::new(2, vec![Column::from(Series::new("x".into(), &["a", "b"]))]).unwrap();
+        let err = enc.transform(other).unwrap_err();
+        assert!(matches!(err, Error::InvalidInput(_)));
+    }
+
+    #[test]
+    fn test_frequency_encoder_wrong_dtype_at_transform_errors() {
+        let mut enc = FrequencyEncoder::new();
+        let df = make_categorical_df();
+        enc.fit(df.clone()).unwrap();
+
+        // The fitted column exists but is no longer String at transform time.
+        let other = DataFrame::new(
+            df.height(),
+            vec![Column::from(Series::new(
+                "color".into(),
+                &[1.0f64, 2.0, 3.0, 4.0],
+            ))],
+        )
+        .unwrap();
+        let err = enc.transform(other).unwrap_err();
+        assert!(matches!(err, Error::InvalidInput(_)));
+    }
+
+    #[test]
+    fn test_frequency_encoder_all_null_column_skipped() {
+        let a = Column::from(Series::new("a".into(), &[None::<&str>, None, None]));
+        let b = Column::from(Series::new("b".into(), &["x", "x", "y"]));
+        let df = DataFrame::new(3, vec![a, b]).unwrap();
+
+        let mut enc = FrequencyEncoder::new();
+        enc.fit(df.clone()).unwrap();
+        let result = enc.transform(df).unwrap();
+
+        // The all-null column contributes no mapping; only "b" is encoded.
+        assert_eq!(result.width(), 1);
+        assert!(result.column("b").is_ok());
+    }
+
+    #[test]
+    fn test_frequency_encoder_refit_resets_state() {
+        let mut enc = FrequencyEncoder::new();
+        let df = make_categorical_df();
+        enc.fit(df.clone()).unwrap();
+        let r1 = enc.transform(df.clone()).unwrap();
+        assert_eq!(r1.width(), 2);
+
+        // Re-fit on a frame with no string columns must fail and must NOT
+        // leave the previous fitted state usable.
+        let bad = DataFrame::new(
+            2,
+            vec![Column::from(Series::new("x".into(), &[1.0f64, 2.0]))],
+        )
+        .unwrap();
+        let err = enc.fit(bad).unwrap_err();
+        assert!(matches!(err, Error::InvalidInput(_)));
+
+        let err = enc.transform(df).unwrap_err();
+        assert!(matches!(err, Error::NotFitted(_)));
     }
 }

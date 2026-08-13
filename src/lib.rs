@@ -64,6 +64,7 @@ pub mod prelude {
     pub use crate::preprocessing::constant_column_remover::ConstantColumnRemover;
     pub use crate::preprocessing::duplicate_column_remover::DuplicateColumnRemover;
     pub use crate::preprocessing::encoder::CountEncoder;
+    pub use crate::preprocessing::encoder::FrequencyEncoder;
     pub use crate::preprocessing::encoder::LabelEncoder;
     pub use crate::preprocessing::encoder::OneHotEncoder;
     pub use crate::preprocessing::encoder::OrdinalEncoder;
