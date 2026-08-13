@@ -95,8 +95,8 @@ pub struct RareCategoryGrouper {
 impl RareCategoryGrouper {
     /// Create a new `RareCategoryGrouper`.
     ///
-    /// Defaults: threshold [`Threshold::MinCount(5)`], `other_label` `"Other"`,
-    /// nulls preserved. Select at least one column with
+    /// Defaults: threshold [`Threshold::MinCount`] with value 5, `other_label`
+    /// `"Other"`, nulls preserved. Select at least one column with
     /// [`columns`](Self::columns) before fitting.
     pub fn new() -> Self {
         Self {
@@ -125,7 +125,7 @@ impl RareCategoryGrouper {
         self
     }
 
-    /// Set the rarity threshold (default: [`Threshold::MinCount(5)`]).
+    /// Set the rarity threshold (default: [`Threshold::MinCount`] with value 5).
     /// Invalidates any previously fitted state.
     pub fn threshold(mut self, threshold: Threshold) -> Self {
         self.invalidate_fit();
