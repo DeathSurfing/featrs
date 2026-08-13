@@ -194,6 +194,23 @@ atd.fit(df.clone())?;
 let result = atd.transform(df)?;
 ```
 
+## Roadmap
+
+Work is tracked in [GitHub milestones](https://github.com/DeathSurfing/featrs/milestones). Open issues are grouped by release so contributors can pick a target and see what ships with it.
+
+| Milestone | Focus | Target |
+|---|---|---|
+| [v0.4.0](https://github.com/DeathSurfing/featrs/milestone/1) | New transformers: scalers, encoders, cleaners | Sep 2026 |
+| [v0.5.0](https://github.com/DeathSurfing/featrs/milestone/2) | Text, time-series, feature selection | Oct 2026 |
+| [v0.6.0](https://github.com/DeathSurfing/featrs/milestone/3) | Pipeline composition & automation (FeatureUnion, AutoPipeline, SchemaValidator) | Nov 2026 |
+| [v0.7.0](https://github.com/DeathSurfing/featrs/milestone/4) | Performance workstream (benchmarks, Polars-native kernels, rayon, ahash) + LazyFrame & streaming | Dec 2026 |
+| [v0.8.0](https://github.com/DeathSurfing/featrs/milestone/5) | Quality & docs hardening (lints, doc tests) | Dec 2026 |
+| [v1.0.0](https://github.com/DeathSurfing/featrs/milestone/6) | Persistence (serde), tracing, ONNX export, pipeline versioning | Mar 2027 |
+
+The performance milestones are ordered: benchmarks (Phase 0) land first, then Polars-native kernels, rayon, and ahash. ahash must stabilize before serde persistence ships so the on-disk hash format never changes.
+
+New contributors: start with a `good first issue` in the next milestone.
+
 ## Resources
 
 - [Crates.io](https://crates.io/crates/featrs)
