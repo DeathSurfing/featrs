@@ -151,12 +151,15 @@ impl Transform<DataFrame> for MaxAbsScaler {
 
         let mut out = x.clone();
         for (name, scale) in names.iter().zip(max_abs) {
-            if *scale == 0.0 {
-                // All-zero column at fit time: division by zero is undefined,
-                // so the column is left unchanged.
-                continue;
-            }
-            replace_f64_column(&mut out, name, "MaxAbsScaler", |v| v / *scale)?;
+            replace_f64_column(&mut out, name, "MaxAbsScaler", |v| {
+                if *scale == 0.0 {
+                    // All-zero column at fit time: division by zero is
+                    // undefined, so the value is passed through unchanged.
+                    v
+                } else {
+                    v / *scale
+                }
+            })?;
         }
 
         Ok(out)
@@ -284,6 +287,21 @@ mod tests {
         assert_relative_eq!(x_vals[0], 0.25, epsilon = 1e-12);
         assert_relative_eq!(x_vals[1], 0.5, epsilon = 1e-12);
         assert_relative_eq!(x_vals[2], 1.0, epsilon = 1e-12);
+    }
+
+    #[test]
+    fn test_zero_scale_column_still_validates_dtype_at_transform() {
+        let zero = Column::from(Series::new("x".into(), &[0.0f64, 0.0, 0.0]));
+        let df = DataFrame::new(3, vec![zero]).unwrap();
+
+        let mut scaler = MaxAbsScaler::new();
+        scaler.fit(df).unwrap();
+
+        // The fitted column is re-declared as Int64 at transform time: the
+        // zero-scale pass-through must still validate the dtype and error.
+        let int_col = Column::from(Series::new("x".into(), &[1i64, 2, 3]));
+        let int_df = DataFrame::new(3, vec![int_col]).unwrap();
+        assert!(scaler.transform(int_df).is_err());
     }
 
     #[test]
