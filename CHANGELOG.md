@@ -36,6 +36,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   relative-frequency (`MinFrequency`) thresholds. Rare and unseen categories
   are grouped, nulls are preserved (or grouped via `treat_null_as_rare`), and
   the column schema is unchanged (#66).
+- `MaxAbsScaler` for scaling each `Float64` column by its maximum absolute
+  value: training values map into `[-1, 1]` (out-of-sample values may exceed
+  the range), without centering, preserving sparsity (zeros remain zeros).
+  All-zero columns are left unchanged, nulls and `NaN` are preserved,
+  and `NaN`/`±Inf` values are ignored when learning the maximum (#47).
 
 ## [0.3.6] - 2026-08-10
 

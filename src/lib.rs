@@ -75,6 +75,7 @@ pub mod prelude {
     pub use crate::preprocessing::interaction_features::InteractionFeaturesBuilder;
     pub use crate::preprocessing::log_transformer::LogMethod;
     pub use crate::preprocessing::log_transformer::LogTransformer;
+    pub use crate::preprocessing::max_abs_scaler::MaxAbsScaler;
     pub use crate::preprocessing::missing_indicator::MissingIndicator;
     pub use crate::preprocessing::normalizer::Norm;
     pub use crate::preprocessing::normalizer::Normalizer;
