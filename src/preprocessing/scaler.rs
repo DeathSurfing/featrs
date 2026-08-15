@@ -402,7 +402,15 @@ impl Default for RobustScaler {
     }
 }
 
-fn percentile_sorted(sorted: &[f64], p: f64) -> f64 {
+/// Linear-interpolated percentile of a sorted slice.
+///
+/// `p` is a percentage in `[0, 100]` (e.g. `25.0` for the first quartile).
+/// Interpolates between the two nearest elements when the percentile falls
+/// between them, per the `numpy.percentile` default (linear) method.
+/// Returns `0.0` for an empty slice; for a single element the element
+/// itself. Shared by `RobustScaler` and the quantile-based transformers
+/// (e.g. `Winsorizer`).
+pub(crate) fn percentile_sorted(sorted: &[f64], p: f64) -> f64 {
     let n = sorted.len();
     if n == 0 {
         return 0.0;

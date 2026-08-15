@@ -41,6 +41,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the range), without centering, preserving sparsity (zeros remain zeros).
   All-zero columns are left unchanged, nulls and `NaN` are preserved,
   and `NaN`/`±Inf` values are ignored when learning the maximum (#47).
+- `Winsorizer` for clipping extreme values at configurable quantiles of the
+  training data: values below the lower quantile are raised to it, values
+  above the upper quantile are lowered to it, with quantile bounds learned
+  per `Float64` column (auto-discovered or explicitly selected). Nulls and
+  `NaN` are preserved, `±Inf` is clipped to the bounds, and invalid quantile
+  pairs are rejected at fit time (#71).
 
 ## [0.3.6] - 2026-08-10
 

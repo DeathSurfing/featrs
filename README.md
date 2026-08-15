@@ -37,6 +37,7 @@ let scaled = scaler.transform(data)?;
 | | `MaxAbsScaler` | Scale by maximum absolute value; training values map to `[-1, 1]`, sparsity preserved |
 | **Normalization** | `Normalizer` | Row-wise L1, L2, or Max normalization |
 | | `Binarizer` | Threshold-based binarization |
+| | `Winsorizer` | Clip extreme values at configurable quantiles (outlier capping) |
 | **Encoding** | `OneHotEncoder` | Create binary dummy columns for categories |
 | | `LabelEncoder` | Encode labels as `0..n_classes-1` integers |
 | | `OrdinalEncoder` | Per-column category → integer encoding |
