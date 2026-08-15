@@ -35,6 +35,7 @@ let scaled = scaler.transform(data)?;
 | | `MinMaxScaler` | Scale to `[0, 1]` or custom range |
 | | `RobustScaler` | Scale using median and IQR (outlier-robust) |
 | | `MaxAbsScaler` | Scale by maximum absolute value; training values map to `[-1, 1]`, sparsity preserved |
+| | `Winsorizer` | Clip extreme values at configurable quantiles (outlier capping) |
 | **Normalization** | `Normalizer` | Row-wise L1, L2, or Max normalization |
 | | `Binarizer` | Threshold-based binarization |
 | **Encoding** | `OneHotEncoder` | Create binary dummy columns for categories |
