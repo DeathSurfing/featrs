@@ -79,6 +79,8 @@ pub mod prelude {
     pub use crate::preprocessing::missing_indicator::MissingIndicator;
     pub use crate::preprocessing::normalizer::Norm;
     pub use crate::preprocessing::normalizer::Normalizer;
+    pub use crate::preprocessing::outlier_clipper::ClipMethod;
+    pub use crate::preprocessing::outlier_clipper::OutlierClipper;
     pub use crate::preprocessing::polynomial_features::PolynomialFeatures;
     pub use crate::preprocessing::polynomial_features::PolynomialFeaturesBuilder;
     pub use crate::preprocessing::quantile_transformer::OutputDistribution;
