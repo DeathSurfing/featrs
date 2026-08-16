@@ -47,6 +47,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   per `Float64` column (auto-discovered or explicitly selected). Nulls and
   `NaN` are preserved, `±Inf` is clipped to the bounds, and invalid quantile
   pairs are rejected at fit time (#71).
+- `OutlierClipper` for clipping outliers to bounds learned from a
+  statistical rule: Tukey's IQR fences (`k = 1.5` by default), z-scores
+  (`k = 3`), or the robust median absolute deviation (`k = 3`, MAD scaled by
+  the 1.4826 consistency factor). Bounds are learned per `Float64` column
+  (auto-discovered or explicitly selected); nulls and `NaN` are preserved,
+  `±Inf` is clipped to the bounds, constant columns pass through unchanged,
+  and a non-positive multiplier is rejected at fit time (#72).
 
 ## [0.3.6] - 2026-08-10
 

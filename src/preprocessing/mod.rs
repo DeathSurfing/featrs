@@ -16,6 +16,7 @@ pub mod log_transformer;
 pub mod max_abs_scaler;
 pub mod missing_indicator;
 pub mod normalizer;
+pub mod outlier_clipper;
 pub mod polynomial_features;
 /// Quantile-based transformation to uniform or normal distribution.
 pub mod quantile_transformer;
