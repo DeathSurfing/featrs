@@ -491,7 +491,8 @@ mod tests {
     fn test_extreme_magnitude_zscore_passes_through() {
         // Variance overflow: mean and std both overflow to ±inf, so the raw
         // bounds would be NaN — f64::clamp panics on a NaN range. The
-        // transformer must degrade to a pass-through instead.
+        // transformer must degrade to a pass-through instead: every value
+        // must come back bit-for-bit unchanged, not merely finite.
         for data in [
             vec![1e308_f64, 1e308, 1e308],
             vec![-1e308_f64, -1e308, -1e308],
@@ -506,8 +507,8 @@ mod tests {
             let result = c.transform(df).unwrap();
 
             let vals = col_values(&result, "a");
-            for v in vals {
-                assert!(v.is_finite(), "column must pass through unchanged");
+            for (got, expected) in vals.iter().zip(data.iter()) {
+                assert_relative_eq!(got, expected, epsilon = 0.0);
             }
         }
     }
