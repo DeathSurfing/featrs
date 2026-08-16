@@ -77,9 +77,12 @@ struct ClipParam {
 ///   below nor above any bound, so it passes through untouched (and `NaN`
 ///   and `±Inf` values are excluded when learning the bounds). `±Inf`
 ///   transform-time values are clipped to the bounds.
-/// - **Constant columns pass through unchanged**: with no spread to learn
-///   from, the bounds collapse onto the single value and clamping is a
-///   no-op (z-score: `std == 0`; MAD: `MAD == 0`; IQR: `Q1 == Q3`).
+/// - **Zero-spread columns pass through unchanged**: with no spread to
+///   learn from (IQR `== 0`, `std == 0`, or `MAD == 0`), the bounds would
+///   collapse onto a single point and clamp every value onto it, so the
+///   column is left untouched instead. This includes constant columns
+///   (where the collapse would have been a no-op anyway) and non-constant
+///   columns such as `[0, 0, 0, 0, 1000]`, whose `1000` must survive.
 /// - **Degenerate bound arithmetic passes through**: if computing a bound
 ///   overflows (e.g. the z-score variance on extreme-magnitude values near
 ///   `f64::MAX` makes the mean and standard deviation `±inf`, so `lo`/`hi`
@@ -265,13 +268,18 @@ impl Fit<DataFrame> for OutlierClipper {
                 }
             };
 
-            // Degenerate arithmetic — e.g. the z-score variance overflows on
-            // extreme-magnitude values (mean and std both ±inf, so lo or hi
-            // becomes NaN) — must not produce NaN bounds: f64::clamp panics
-            // on a NaN range and even a one-sided NaN would silently clamp
-            // the whole column. Degrade to a pass-through instead, matching
-            // the "no outliers" definition.
-            let (lo, hi) = if lo.is_nan() || hi.is_nan() {
+            // Two degenerate cases must not yield point bounds that flatten
+            // the whole column:
+            // - arithmetic overflow (the z-score variance overflows on
+            //   extreme-magnitude values, making mean and std ±inf so lo or
+            //   hi becomes NaN) — f64::clamp panics on a NaN range;
+            // - zero spread (Q1 == Q3, std == 0, or MAD == 0), which
+            //   collapses the bounds onto a single point and would clamp
+            //   every value onto it — e.g. an IQR of 0 on [0,0,0,0,1000]
+            //   would destroy the 1000.
+            // Both degrade to a pass-through instead, matching the "no
+            // outliers" definition.
+            let (lo, hi) = if lo.is_nan() || hi.is_nan() || lo == hi {
                 (f64::NEG_INFINITY, f64::INFINITY)
             } else {
                 (lo, hi)
@@ -508,7 +516,51 @@ mod tests {
 
             let vals = col_values(&result, "a");
             for (got, expected) in vals.iter().zip(data.iter()) {
-                assert_relative_eq!(got, expected, epsilon = 0.0);
+                assert_eq!(
+                    got.to_bits(),
+                    expected.to_bits(),
+                    "column must pass through bit-for-bit"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_zero_spread_columns_pass_through() {
+        // Zero spread (Q1 == Q3, std == 0, MAD == 0) collapses the raw
+        // bounds onto a single point; clamping to it would destroy every
+        // value off that point, e.g. the 1000 in [0,0,0,0,1000]. The
+        // transformer must leave such columns untouched.
+        let cases: [(Vec<f64>, ClipMethod); 4] = [
+            // IQR: Q1 == Q3 == 0, lo == hi == 0.
+            (
+                vec![0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1000.0],
+                ClipMethod::IQR { k: 1.5 },
+            ),
+            // Negative side of the same IQR degenerate case.
+            (
+                vec![-1000.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+                ClipMethod::IQR { k: 1.5 },
+            ),
+            // MAD: median 0, all deviations except one are 0 -> MAD == 0.
+            (vec![0.0, 0.0, 0.0, 0.0, 1000.0], ClipMethod::MAD { k: 3.0 }),
+            // ZScore: variance underflows to 0 on tiny magnitudes.
+            (
+                vec![1e-200_f64, 2e-200, 3e-200],
+                ClipMethod::ZScore { k: 3.0 },
+            ),
+        ];
+
+        for (data, method) in cases {
+            let mut c = OutlierClipper::new().columns(&["a"]).method(method);
+            let df = df_with(&data);
+
+            c.fit(df.clone()).unwrap();
+            let result = c.transform(df).unwrap();
+
+            let vals = col_values(&result, "a");
+            for (got, expected) in vals.iter().zip(data.iter()) {
+                assert_relative_eq!(got, expected, epsilon = 1e-12);
             }
         }
     }
