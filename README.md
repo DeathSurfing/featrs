@@ -44,6 +44,7 @@ let scaled = scaler.transform(data)?;
 | | `OrdinalEncoder` | Per-column category → integer encoding |
 | | `CountEncoder` | Replace categories with their raw occurrence counts |
 | | `FrequencyEncoder` | Replace categories with their observed relative frequencies |
+| | `BinaryEncoder` | Encode categories as binary digit columns using `max(1, ceil(log₂(n_categories)))` columns |
 | | `CyclicalEncoder` | Sin/cos encoding for cyclical features (hour, month) |
 | | `FeatureHasher` | Hash strings into a fixed number of buckets |
 | | `StringCleaner` | Trim, normalize case, and regex-replace string values |
