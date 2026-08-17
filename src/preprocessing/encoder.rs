@@ -1617,7 +1617,7 @@ mod tests {
         enc.fit(df.clone()).unwrap();
         let result = enc.transform(df).unwrap();
 
-        // 4 categories -> 2 bit columns; sorted IDs: blue=0, green=1, red=2.
+        // 3 categories -> 2 bit columns; sorted IDs: blue=0, green=1, red=2.
         assert_eq!(result.width(), 2);
         assert_eq!(result.get_column_names()[0].as_str(), "color_bit_0");
         assert_eq!(result.get_column_names()[1].as_str(), "color_bit_1");
@@ -1853,7 +1853,7 @@ mod tests {
         enc.fit(df.clone()).unwrap();
         let result = enc.transform(df).unwrap();
 
-        // city (4 categories) -> 2 bit columns; price passes through unchanged.
+        // city (3 categories) -> 2 bit columns; price passes through unchanged.
         assert_eq!(result.width(), 3);
         assert_eq!(result.get_column_names()[0].as_str(), "city_bit_0");
         assert_eq!(result.get_column_names()[1].as_str(), "city_bit_1");
