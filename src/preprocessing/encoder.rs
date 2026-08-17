@@ -1,6 +1,7 @@
 //! Categorical encoding.
 //!
 //! Analogous to `sklearn.preprocessing`. Provides:
+//! - [`BinaryEncoder`] — encode categories as binary digit columns
 //! - [`OneHotEncoder`] — create dummy/binary columns for each category
 //! - [`LabelEncoder`] — encode labels as `0..n_classes-1` integers
 //! - [`OrdinalEncoder`] — encode categorical features as integer columns
@@ -798,6 +799,272 @@ impl Transform<DataFrame> for FrequencyEncoder {
     }
 }
 
+/// Encode categorical string values as binary digit columns.
+///
+/// Each category is assigned an ordinal ID `0..n_categories` (in sorted
+/// alphabetical order) during [`fit`](Fit::fit), and each ID is decomposed
+/// into its binary representation, producing `max(1, ⌈log₂(n_categories)⌉)`
+/// output columns per input column, named `{column}_bit_{i}` for `i` in
+/// `0..n_bits` (bit `i` is the `2^i`-place bit — least-significant bit
+/// first). The number of output columns grows logarithmically with the
+/// number of categories instead of linearly as one-hot encoding would, which
+/// is useful for high-cardinality categoricals.
+///
+/// Details:
+/// - A column with a single category is encoded as one all-zero bit column.
+/// - String columns that are entirely null at fit time are skipped (they
+///   have no categories to map) and pass through the output unchanged.
+/// - Categories seen during `transform` but not during `fit` are encoded as
+///   an all-zeros vector (a safe, uninformative default).
+/// - Null values are preserved as null across every bit column.
+/// - Non-string columns pass through the output unchanged; each fitted
+///   string column is replaced, in place, by its bit columns.
+/// - Output columns are `UInt32` (`0`/`1`). Many downstream transformers in
+///   this crate operate on `Float64` columns only (see `require_f64_columns`),
+///   so you may need to cast the result (e.g.
+///   `with_column(col("*").cast(Float64))`) before feeding it to a scaler or
+///   normalizer.
+/// - If a generated name (e.g. `color_bit_0`) would collide with another
+///   output column, [`transform`](Transform::transform) returns
+///   [`Error::InvalidInput`] instead of silently overwriting data. Rename
+///   the conflicting input column before encoding.
+///
+/// # Example
+///
+/// ```rust
+/// use featrs::preprocessing::encoder::BinaryEncoder;
+/// use featrs::traits::{Fit, Transform};
+/// use polars::prelude::{Column, DataFrame, NamedFrom, Series};
+///
+/// let col = Column::from(Series::new("color".into(), &["red", "blue", "red", "green"]));
+/// let df = DataFrame::new(4, vec![col])?;
+///
+/// let mut enc = BinaryEncoder::new();
+/// enc.fit(df.clone())?;
+/// let encoded = enc.transform(df)?;
+/// // 3 categories -> 2 bit columns (ceil(log2(3)))
+/// assert_eq!(encoded.width(), 2);
+/// # Ok::<(), Box<dyn std::error::Error>>(())
+/// ```
+pub struct BinaryEncoder {
+    fitted: bool,
+    column_names: Option<Vec<String>>,
+    category_ids: Option<Vec<HashMap<String, u32>>>,
+    n_bits: Option<Vec<usize>>,
+}
+
+impl BinaryEncoder {
+    /// Create a new `BinaryEncoder`.
+    pub fn new() -> Self {
+        Self {
+            fitted: false,
+            column_names: None,
+            category_ids: None,
+            n_bits: None,
+        }
+    }
+}
+
+impl Default for BinaryEncoder {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl Fit<DataFrame> for BinaryEncoder {
+    type Output = ();
+
+    fn fit(&mut self, x: DataFrame) -> Result<()> {
+        // Reset any previously learned state so a failed re-fit cannot leave
+        // stale mappings behind.
+        self.fitted = false;
+        self.column_names = None;
+        self.category_ids = None;
+        self.n_bits = None;
+
+        if x.height() == 0 {
+            return Err(Error::InvalidInput(
+                "BinaryEncoder.fit received a DataFrame with 0 rows. \
+                 Provide at least 1 row."
+                    .into(),
+            ));
+        }
+
+        let mut names = Vec::new();
+        let mut ids = Vec::new();
+        let mut bits = Vec::new();
+
+        for col in x.columns() {
+            // Non-string columns are ignored; only String columns are encoded.
+            if col.dtype() != &DataType::String {
+                continue;
+            }
+            let name = col.name().to_string();
+            let unique = column_unique_strings(col)?;
+
+            // Skip columns with no observed (non-null) category.
+            if unique.is_empty() {
+                continue;
+            }
+
+            // Smallest number of bits that can represent `unique.len()`
+            // distinct IDs; a single category still gets one (all-zero) bit
+            // column. Integer arithmetic keeps this exact.
+            let n_categories = unique.len();
+            debug_assert!(
+                n_categories <= u32::MAX as usize,
+                "BinaryEncoder: too many categories to assign u32 IDs"
+            );
+            let mut n_bits = 1usize;
+            let mut capacity = 2usize;
+            while capacity < n_categories {
+                capacity <<= 1;
+                n_bits += 1;
+            }
+
+            let mapping: HashMap<String, u32> = unique
+                .iter()
+                .enumerate()
+                .map(|(i, c)| (c.clone(), i as u32))
+                .collect();
+
+            names.push(name);
+            ids.push(mapping);
+            bits.push(n_bits);
+        }
+
+        if names.is_empty() {
+            return Err(Error::InvalidInput(
+                "BinaryEncoder.fit: no string columns with non-null values \
+                 found. BinaryEncoder operates on String columns only."
+                    .into(),
+            ));
+        }
+
+        self.column_names = Some(names);
+        self.category_ids = Some(ids);
+        self.n_bits = Some(bits);
+        self.fitted = true;
+        Ok(())
+    }
+}
+
+impl Transform<DataFrame> for BinaryEncoder {
+    type Output = DataFrame;
+
+    fn transform(&self, x: DataFrame) -> Result<DataFrame> {
+        if !self.fitted {
+            return Err(Error::NotFitted(
+                "BinaryEncoder has not been fitted. \
+                 Call .fit(dataframe) before .transform()."
+                    .into(),
+            ));
+        }
+        let names = self.column_names.as_ref().ok_or_else(|| {
+            Error::NotFitted(
+                "BinaryEncoder has not been fitted. \
+                 Call .fit(dataframe) before .transform()."
+                    .into(),
+            )
+        })?;
+        let ids = self.category_ids.as_ref().ok_or_else(|| {
+            Error::NotFitted(
+                "BinaryEncoder has not been fitted. \
+                 Call .fit(dataframe) before .transform()."
+                    .into(),
+            )
+        })?;
+        let bits = self.n_bits.as_ref().ok_or_else(|| {
+            Error::NotFitted(
+                "BinaryEncoder has not been fitted. \
+                 Call .fit(dataframe) before .transform()."
+                    .into(),
+            )
+        })?;
+
+        // Every fitted column must exist in the transform input and still be
+        // String. Without this up-front check, a missing column would silently
+        // pass through the output, hiding bugs.
+        for name in names.iter() {
+            let s = x.column(name.as_str()).map_err(|e| {
+                Error::InvalidInput(format!(
+                    "BinaryEncoder.transform: column '{}' not found. \
+                     The encoder was fitted on columns: {:?}. {}",
+                    name, names, e
+                ))
+            })?;
+            if s.dtype() != &DataType::String {
+                return Err(Error::InvalidInput(format!(
+                    "BinaryEncoder.transform: column '{}' has dtype {}; expected String. \
+                     The encoder was fitted on String columns.",
+                    name,
+                    s.dtype()
+                )));
+            }
+        }
+
+        let fitted_idx: std::collections::HashMap<&str, usize> = names
+            .iter()
+            .enumerate()
+            .map(|(i, n)| (n.as_str(), i))
+            .collect();
+        let mut out_cols: Vec<Column> = Vec::new();
+        let mut output_names: std::collections::HashSet<String> = std::collections::HashSet::new();
+
+        for col in x.columns() {
+            let name = col.name();
+            match fitted_idx.get(name.as_str()) {
+                Some(&i) => {
+                    let ca = col.as_materialized_series().str().map_err(|e| {
+                        Error::InvalidInput(format!(
+                            "BinaryEncoder.transform: column '{}' has dtype {}; expected String. {}",
+                            name,
+                            col.dtype(),
+                            e
+                        ))
+                    })?;
+                    let mapping = &ids[i];
+                    let n_bits = bits[i];
+
+                    for j in 0..n_bits {
+                        let bit_name = format!("{name}_bit_{j}");
+                        if !output_names.insert(bit_name.clone()) {
+                            return Err(Error::InvalidInput(format!(
+                                "BinaryEncoder.transform: generated column '{bit_name}' \
+                                 collides with another output column. Rename the \
+                                 conflicting input column before encoding."
+                            )));
+                        }
+                        // Bit `j` is the `2^j`-place (least-significant) bit of
+                        // the category ID. Unseen categories (no mapping entry)
+                        // encode as ID 0, i.e. an all-zeros vector.
+                        let encoded: ChunkedArray<UInt32Type> = ca
+                            .iter()
+                            .map(|opt| {
+                                opt.map(|v| (mapping.get(v).copied().unwrap_or(0) >> j as u32) & 1)
+                            })
+                            .collect();
+                        let mut series = encoded.into_series();
+                        series.rename(bit_name.as_str().into());
+                        out_cols.push(Column::from(series));
+                    }
+                }
+                None => {
+                    if !output_names.insert(name.to_string()) {
+                        return Err(Error::InvalidInput(format!(
+                            "BinaryEncoder.transform: column '{name}' collides with another \
+                             output column. Rename the conflicting input column before encoding."
+                        )));
+                    }
+                    out_cols.push(col.clone());
+                }
+            }
+        }
+
+        DataFrame::new(x.height(), out_cols).map_err(|e| Error::Computation(e.to_string()))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1333,5 +1600,424 @@ mod tests {
 
         let err = enc.transform(df).unwrap_err();
         assert!(matches!(err, Error::NotFitted(_)));
+    }
+
+    fn make_binary_df() -> DataFrame {
+        let color = Column::from(Series::new(
+            "color".into(),
+            &["red", "blue", "red", "green"],
+        ));
+        DataFrame::new(4, vec![color]).unwrap()
+    }
+
+    #[test]
+    fn test_binary_encoder_four_categories_two_bits() {
+        let mut enc = BinaryEncoder::new();
+        let df = make_binary_df();
+        enc.fit(df.clone()).unwrap();
+        let result = enc.transform(df).unwrap();
+
+        // 4 categories -> 2 bit columns; sorted IDs: blue=0, green=1, red=2.
+        assert_eq!(result.width(), 2);
+        assert_eq!(result.get_column_names()[0].as_str(), "color_bit_0");
+        assert_eq!(result.get_column_names()[1].as_str(), "color_bit_1");
+
+        // LSB first: red=2 -> [0,1], blue=0 -> [0,0], green=1 -> [1,0].
+        let bit0: Vec<u32> = result
+            .column("color_bit_0")
+            .unwrap()
+            .u32()
+            .unwrap()
+            .iter()
+            .flatten()
+            .collect();
+        let bit1: Vec<u32> = result
+            .column("color_bit_1")
+            .unwrap()
+            .u32()
+            .unwrap()
+            .iter()
+            .flatten()
+            .collect();
+        assert_eq!(bit0, vec![0, 0, 0, 1]);
+        assert_eq!(bit1, vec![1, 0, 1, 0]);
+    }
+
+    #[test]
+    fn test_binary_encoder_eight_categories_three_bits() {
+        let vals = ["a", "b", "c", "d", "e", "f", "g", "h"];
+        let col = Column::from(Series::new("c".into(), &vals));
+        let df = DataFrame::new(8, vec![col]).unwrap();
+
+        let mut enc = BinaryEncoder::new();
+        enc.fit(df.clone()).unwrap();
+        let result = enc.transform(df).unwrap();
+
+        assert_eq!(result.width(), 3);
+        // IDs a=0..h=7; bit i holds the 2^i-place digit of each ID.
+        let bit0: Vec<u32> = result
+            .column("c_bit_0")
+            .unwrap()
+            .u32()
+            .unwrap()
+            .iter()
+            .flatten()
+            .collect();
+        let bit1: Vec<u32> = result
+            .column("c_bit_1")
+            .unwrap()
+            .u32()
+            .unwrap()
+            .iter()
+            .flatten()
+            .collect();
+        let bit2: Vec<u32> = result
+            .column("c_bit_2")
+            .unwrap()
+            .u32()
+            .unwrap()
+            .iter()
+            .flatten()
+            .collect();
+        assert_eq!(bit0, vec![0, 1, 0, 1, 0, 1, 0, 1]);
+        assert_eq!(bit1, vec![0, 0, 1, 1, 0, 0, 1, 1]);
+        assert_eq!(bit2, vec![0, 0, 0, 0, 1, 1, 1, 1]);
+    }
+
+    #[test]
+    fn test_binary_encoder_id_five_decomposes_to_101() {
+        // Six sorted categories assign "f" the ID 5 -> binary 101 (LSB first:
+        // bit_0=1, bit_1=0, bit_2=1).
+        let col = Column::from(Series::new("c".into(), &["f", "a", "b", "c", "d", "e"]));
+        let df = DataFrame::new(6, vec![col]).unwrap();
+
+        let mut enc = BinaryEncoder::new();
+        enc.fit(df.clone()).unwrap();
+        let result = enc.transform(df).unwrap();
+
+        assert_eq!(result.width(), 3);
+        // Rows: f=5 -> 101, a=0 -> 000, b=1 -> 001 (LSB first), c=2 -> 010,
+        // d=3 -> 011, e=4 -> 100.
+        let bit0: Vec<u32> = result
+            .column("c_bit_0")
+            .unwrap()
+            .u32()
+            .unwrap()
+            .iter()
+            .flatten()
+            .collect();
+        let bit1: Vec<u32> = result
+            .column("c_bit_1")
+            .unwrap()
+            .u32()
+            .unwrap()
+            .iter()
+            .flatten()
+            .collect();
+        let bit2: Vec<u32> = result
+            .column("c_bit_2")
+            .unwrap()
+            .u32()
+            .unwrap()
+            .iter()
+            .flatten()
+            .collect();
+        assert_eq!(bit0, vec![1, 0, 1, 0, 1, 0]);
+        assert_eq!(bit1, vec![0, 0, 0, 1, 1, 0]);
+        assert_eq!(bit2, vec![1, 0, 0, 0, 0, 1]);
+    }
+
+    #[test]
+    fn test_binary_encoder_two_categories_one_bit() {
+        let col = Column::from(Series::new("c".into(), &["x", "y", "x"]));
+        let df = DataFrame::new(3, vec![col]).unwrap();
+
+        let mut enc = BinaryEncoder::new();
+        enc.fit(df.clone()).unwrap();
+        let result = enc.transform(df).unwrap();
+
+        assert_eq!(result.width(), 1);
+        // x=0 -> 0, y=1 -> 1.
+        let bit0: Vec<u32> = result
+            .column("c_bit_0")
+            .unwrap()
+            .u32()
+            .unwrap()
+            .iter()
+            .flatten()
+            .collect();
+        assert_eq!(bit0, vec![0, 1, 0]);
+    }
+
+    #[test]
+    fn test_binary_encoder_single_category_all_zeros() {
+        let col = Column::from(Series::new("c".into(), &["only", "only"]));
+        let df = DataFrame::new(2, vec![col]).unwrap();
+
+        let mut enc = BinaryEncoder::new();
+        enc.fit(df.clone()).unwrap();
+        let result = enc.transform(df).unwrap();
+
+        assert_eq!(result.width(), 1);
+        let bit0: Vec<u32> = result
+            .column("c_bit_0")
+            .unwrap()
+            .u32()
+            .unwrap()
+            .iter()
+            .flatten()
+            .collect();
+        assert_eq!(bit0, vec![0, 0]);
+    }
+
+    #[test]
+    fn test_binary_encoder_unseen_category_all_zeros() {
+        let mut enc = BinaryEncoder::new();
+        let train = DataFrame::new(
+            3,
+            vec![Column::from(Series::new("c".into(), &["a", "a", "b"]))],
+        )
+        .unwrap();
+        enc.fit(train).unwrap();
+
+        let test = DataFrame::new(
+            3,
+            vec![Column::from(Series::new("c".into(), &["a", "zzz", "b"]))],
+        )
+        .unwrap();
+        let result = enc.transform(test).unwrap();
+
+        // a=0, b=1; unseen "zzz" -> all-zero vector.
+        let bit0: Vec<u32> = result
+            .column("c_bit_0")
+            .unwrap()
+            .u32()
+            .unwrap()
+            .iter()
+            .flatten()
+            .collect();
+        assert_eq!(bit0, vec![0, 0, 1]);
+    }
+
+    #[test]
+    fn test_binary_encoder_nulls_preserved() {
+        let col = Column::from(Series::new(
+            "c".into(),
+            &[Some("a"), None, Some("b"), Some("a")],
+        ));
+        let df = DataFrame::new(4, vec![col]).unwrap();
+
+        let mut enc = BinaryEncoder::new();
+        enc.fit(df.clone()).unwrap();
+        let result = enc.transform(df).unwrap();
+
+        let ca = result.column("c_bit_0").unwrap().u32().unwrap();
+        let vals: Vec<Option<u32>> = ca.iter().collect();
+        // a=0 -> 0, null stays null across the bit columns, b=1 -> 1.
+        assert_eq!(vals, vec![Some(0), None, Some(1), Some(0)]);
+    }
+
+    #[test]
+    fn test_binary_encoder_not_fitted() {
+        let enc = BinaryEncoder::new();
+        let df = make_binary_df();
+        let err = enc.transform(df).unwrap_err();
+        assert!(matches!(err, Error::NotFitted(_)));
+    }
+
+    #[test]
+    fn test_binary_encoder_empty_input_errors() {
+        let mut enc = BinaryEncoder::new();
+        let df = DataFrame::new(0, Vec::<Column>::new()).unwrap();
+        let err = enc.fit(df).unwrap_err();
+        assert!(matches!(err, Error::InvalidInput(_)));
+    }
+
+    #[test]
+    fn test_binary_encoder_no_string_columns_errors() {
+        let x = Column::from(Series::new("x".into(), &[1.0f64, 2.0, 3.0]));
+        let df = DataFrame::new(3, vec![x]).unwrap();
+
+        let mut enc = BinaryEncoder::new();
+        let err = enc.fit(df).unwrap_err();
+        assert!(matches!(err, Error::InvalidInput(_)));
+    }
+
+    #[test]
+    fn test_binary_encoder_non_string_columns_pass_through() {
+        let city = Column::from(Series::new("city".into(), &["a", "b", "a", "c"]));
+        let price = Column::from(Series::new("price".into(), &[1.5f64, 2.5, 3.5, 4.5]));
+        let df = DataFrame::new(4, vec![city, price]).unwrap();
+
+        let mut enc = BinaryEncoder::new();
+        enc.fit(df.clone()).unwrap();
+        let result = enc.transform(df).unwrap();
+
+        // city (4 categories) -> 2 bit columns; price passes through unchanged.
+        assert_eq!(result.width(), 3);
+        assert_eq!(result.get_column_names()[0].as_str(), "city_bit_0");
+        assert_eq!(result.get_column_names()[1].as_str(), "city_bit_1");
+        assert_eq!(result.get_column_names()[2].as_str(), "price");
+        assert_eq!(result.column("price").unwrap().dtype(), &DataType::Float64);
+        let prices: Vec<f64> = result
+            .column("price")
+            .unwrap()
+            .f64()
+            .unwrap()
+            .iter()
+            .flatten()
+            .collect();
+        assert_eq!(prices, vec![1.5, 2.5, 3.5, 4.5]);
+    }
+
+    #[test]
+    fn test_binary_encoder_output_dtype_is_uint32() {
+        let mut enc = BinaryEncoder::new();
+        let df = make_binary_df();
+        enc.fit(df.clone()).unwrap();
+        let result = enc.transform(df).unwrap();
+
+        assert_eq!(
+            result.column("color_bit_0").unwrap().dtype(),
+            &DataType::UInt32
+        );
+    }
+
+    #[test]
+    fn test_binary_encoder_default_and_missing_column_error() {
+        let mut enc = BinaryEncoder::default();
+        let df = make_binary_df();
+        enc.fit(df).unwrap();
+
+        // Transform a frame missing the fitted columns.
+        let other =
+            DataFrame::new(2, vec![Column::from(Series::new("x".into(), &["a", "b"]))]).unwrap();
+        let err = enc.transform(other).unwrap_err();
+        assert!(matches!(err, Error::InvalidInput(_)));
+    }
+
+    #[test]
+    fn test_binary_encoder_wrong_dtype_at_transform_errors() {
+        let mut enc = BinaryEncoder::new();
+        let df = make_binary_df();
+        enc.fit(df.clone()).unwrap();
+
+        // The fitted column exists but is no longer String at transform time.
+        let other = DataFrame::new(
+            df.height(),
+            vec![Column::from(Series::new(
+                "color".into(),
+                &[1.0f64, 2.0, 3.0, 4.0],
+            ))],
+        )
+        .unwrap();
+        let err = enc.transform(other).unwrap_err();
+        assert!(matches!(err, Error::InvalidInput(_)));
+    }
+
+    #[test]
+    fn test_binary_encoder_all_null_column_skipped() {
+        let a = Column::from(Series::new("a".into(), &[None::<&str>, None, None]));
+        let b = Column::from(Series::new("b".into(), &["x", "x", "y"]));
+        let df = DataFrame::new(3, vec![a, b]).unwrap();
+
+        let mut enc = BinaryEncoder::new();
+        enc.fit(df.clone()).unwrap();
+        let result = enc.transform(df).unwrap();
+
+        // The all-null column contributes no mapping, so it is not encoded and
+        // passes through unchanged; only "b" is encoded.
+        assert_eq!(result.width(), 2);
+        assert!(result.column("a").is_ok());
+        assert_eq!(result.column("a").unwrap().dtype(), &DataType::String);
+        assert!(result.column("b_bit_0").is_ok());
+    }
+
+    #[test]
+    fn test_binary_encoder_refit_resets_state() {
+        let mut enc = BinaryEncoder::new();
+        let df = make_binary_df();
+        enc.fit(df.clone()).unwrap();
+        let r1 = enc.transform(df.clone()).unwrap();
+        assert_eq!(r1.width(), 2);
+
+        // Re-fit on a frame with no string columns must fail and must NOT
+        // leave the previous fitted state usable.
+        let bad = DataFrame::new(
+            2,
+            vec![Column::from(Series::new("x".into(), &[1.0f64, 2.0]))],
+        )
+        .unwrap();
+        let err = enc.fit(bad).unwrap_err();
+        assert!(matches!(err, Error::InvalidInput(_)));
+
+        let err = enc.transform(df).unwrap_err();
+        assert!(matches!(err, Error::NotFitted(_)));
+    }
+
+    #[test]
+    fn test_binary_encoder_generated_name_collision_errors() {
+        // Fitting "a" (2 categories) generates "a_bit_0"; an input column
+        // literally named "a_bit_0" would collide -> error, not overwrite.
+        let mut enc = BinaryEncoder::new();
+        let train =
+            DataFrame::new(2, vec![Column::from(Series::new("a".into(), &["x", "y"]))]).unwrap();
+        enc.fit(train).unwrap();
+
+        // Pass-through column after the fitted one: the generated name is
+        // inserted first and the pass-through insert fails.
+        let a = Column::from(Series::new("a".into(), &["x", "y"]));
+        let clash = Column::from(Series::new("a_bit_0".into(), &[1.0f64, 2.0]));
+        let df = DataFrame::new(2, vec![a, clash]).unwrap();
+        let err = enc.transform(df).unwrap_err();
+        assert!(matches!(err, Error::InvalidInput(_)));
+
+        // Reverse ordering: the pass-through name is inserted first and the
+        // generated insert fails.
+        let a = Column::from(Series::new("a".into(), &["x", "y"]));
+        let clash = Column::from(Series::new("a_bit_0".into(), &[1.0f64, 2.0]));
+        let df = DataFrame::new(2, vec![clash, a]).unwrap();
+        let err = enc.transform(df).unwrap_err();
+        assert!(matches!(err, Error::InvalidInput(_)));
+    }
+
+    #[test]
+    fn test_binary_encoder_multiple_fitted_columns() {
+        // Two fitted String columns are each replaced in place by their bit
+        // columns, interleaved with a pass-through column in input order.
+        let a = Column::from(Series::new("a".into(), &["x", "y", "x"]));
+        let num = Column::from(Series::new("num".into(), &[1.0f64, 2.0, 3.0]));
+        let b = Column::from(Series::new("b".into(), &["p", "p", "q"]));
+        let df = DataFrame::new(3, vec![a, num, b]).unwrap();
+
+        let mut enc = BinaryEncoder::new();
+        enc.fit(df.clone()).unwrap();
+        let result = enc.transform(df).unwrap();
+
+        // a (2 cats) -> a_bit_0, num passes through, b (2 cats) -> b_bit_0.
+        assert_eq!(result.width(), 3);
+        assert_eq!(result.get_column_names()[0].as_str(), "a_bit_0");
+        assert_eq!(result.get_column_names()[1].as_str(), "num");
+        assert_eq!(result.get_column_names()[2].as_str(), "b_bit_0");
+
+        let a_bits: Vec<u32> = result
+            .column("a_bit_0")
+            .unwrap()
+            .u32()
+            .unwrap()
+            .iter()
+            .flatten()
+            .collect();
+        let b_bits: Vec<u32> = result
+            .column("b_bit_0")
+            .unwrap()
+            .u32()
+            .unwrap()
+            .iter()
+            .flatten()
+            .collect();
+        // x=0 -> 0, y=1 -> 1; p=0 -> 0, q=1 -> 1.
+        assert_eq!(a_bits, vec![0, 1, 0]);
+        assert_eq!(b_bits, vec![0, 0, 1]);
     }
 }

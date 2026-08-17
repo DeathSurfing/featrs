@@ -28,6 +28,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   observations per column (so they sum to approximately `1.0`), categories
   unseen at transform time are encoded as `0.0`, nulls are preserved as null,
   and the output columns are `Float64` (#54).
+- `BinaryEncoder` for encoding categorical string values as binary digit
+  columns: each category receives a sorted ordinal ID and each ID is
+  decomposed into `max(1, ⌈log₂(n_categories)⌉)` `UInt32` bit columns named
+  `{column}_bit_{i}` (least-significant bit first), replacing the source
+  column in place while non-string columns pass through. Unseen categories
+  encode as an all-zeros vector, nulls are preserved as null across the bit
+  columns, and generated-name collisions are rejected rather than silently
+  overwriting data (#57).
 - `StringCleaner` for trimming and collapsing whitespace, normalizing Unicode
   case, and applying pre-compiled regex replacements to selected String
   columns while preserving nulls and the input schema (#67).
