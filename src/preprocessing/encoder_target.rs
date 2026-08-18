@@ -3,8 +3,7 @@
 //! [`TargetEncoder`] replaces categorical string values with the smoothed
 //! mean of a supervised target variable, following scikit-learn's
 //! `TargetEncoder` design. It is the only encoder in this crate that
-//! implements [`FitSupervised`](crate::traits::FitSupervised) (it needs the
-//! target `y` at fit time).
+//! implements [`FitSupervised`] (it needs the target `y` at fit time).
 
 use crate::traits::{Error, FitSupervised, Result, Transform};
 use polars::prelude::*;
