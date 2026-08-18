@@ -23,6 +23,13 @@ use std::collections::HashMap;
 /// the encoding toward the global mean, which regularizes high-cardinality
 /// categories and mitigates target leakage.
 ///
+/// Note that the statistics are **not cross-fitted** (unlike scikit-learn's
+/// `TargetEncoder.fit_transform`, which encodes training rows with
+/// out-of-fold statistics): every encoding here is computed from the full
+/// fit data, so transforming the same frame you fitted on still exposes
+/// target information in the features. Fit on a training split only and
+/// apply `transform` to validation or test folds.
+///
 /// # Behaviour
 ///
 /// - Only `String` columns are encoded; non-string columns pass through the
