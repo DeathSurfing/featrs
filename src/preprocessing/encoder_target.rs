@@ -181,6 +181,13 @@ impl FitSupervised<DataFrame, DataFrame> for TargetEncoder {
             ));
         }
         let global_mean = global_sum / global_n as f64;
+        if !global_mean.is_finite() {
+            return Err(Error::InvalidInput(
+                "TargetEncoder.fit: target values overflow to a non-finite global mean. \
+                 Scale the target values before fitting."
+                    .into(),
+            ));
+        }
 
         let mut names = Vec::new();
         let mut encodings = Vec::new();
@@ -224,9 +231,17 @@ impl FitSupervised<DataFrame, DataFrame> for TargetEncoder {
                 .into_iter()
                 .map(|(c, (sum, n))| {
                     let encoded = (sum + self.alpha * global_mean) / (n as f64 + self.alpha);
-                    (c, encoded)
+                    if encoded.is_finite() {
+                        Ok((c, encoded))
+                    } else {
+                        Err(Error::InvalidInput(format!(
+                            "TargetEncoder.fit: column '{name}' would encode to a \
+                             non-finite value (sum = {sum}, n = {n}). Target values \
+                             or alpha are too large; scale the target or reduce alpha."
+                        )))
+                    }
                 })
-                .collect();
+                .collect::<Result<HashMap<String, f64>>>()?;
 
             names.push(name);
             encodings.push(mapping);
@@ -234,8 +249,9 @@ impl FitSupervised<DataFrame, DataFrame> for TargetEncoder {
 
         if names.is_empty() {
             return Err(Error::InvalidInput(
-                "TargetEncoder.fit: no string columns found. \
-                 TargetEncoder operates on String columns only."
+                "TargetEncoder.fit: no string columns with usable categories found. \
+                 TargetEncoder operates on String columns with at least one non-null \
+                 value paired with a usable target row."
                     .into(),
             ));
         }
@@ -259,27 +275,17 @@ impl Transform<DataFrame> for TargetEncoder {
                     .into(),
             ));
         }
-        let names = self.column_names.as_ref().ok_or_else(|| {
-            Error::NotFitted(
-                "TargetEncoder has not been fitted. \
-                 Call .fit(x, y) before .transform()."
-                    .into(),
-            )
-        })?;
-        let encodings = self.encodings.as_ref().ok_or_else(|| {
-            Error::NotFitted(
-                "TargetEncoder has not been fitted. \
-                 Call .fit(x, y) before .transform()."
-                    .into(),
-            )
-        })?;
-        let global_mean = self.global_mean.ok_or_else(|| {
-            Error::NotFitted(
-                "TargetEncoder has not been fitted. \
-                 Call .fit(x, y) before .transform()."
-                    .into(),
-            )
-        })?;
+        let (names, encodings, global_mean) =
+            match (&self.column_names, &self.encodings, self.global_mean) {
+                (Some(n), Some(e), Some(g)) => (n, e, g),
+                _ => {
+                    return Err(Error::NotFitted(
+                        "TargetEncoder has not been fitted. \
+                         Call .fit(x, y) before .transform()."
+                            .into(),
+                    ));
+                }
+            };
 
         let mut out = x;
         for (name, mapping) in names.iter().zip(encodings.iter()) {
@@ -708,6 +714,40 @@ mod tests {
             result.column("nulls").unwrap().dtype(),
             &DataType::String,
             "skipped all-null column must pass through un-encoded"
+        );
+    }
+
+    #[test]
+    fn test_overflowing_category_sums_rejected() {
+        // alpha * global_mean overflows; the per-category encoded value would
+        // be non-finite, which must be reported instead of silently emitted.
+        let cat = Column::from(Series::new("cat".into(), &["a", "b", "a"]));
+        let x = DataFrame::new(3, vec![cat]).unwrap();
+        let target = Column::from(Series::new("y".into(), &[1e200_f64, 0.0, 1e200]));
+        let y = DataFrame::new(3, vec![target]).unwrap();
+
+        let mut enc = TargetEncoder::new().alpha(f64::MAX);
+        let err = enc.fit(x, y).unwrap_err();
+        assert!(
+            matches!(err, Error::InvalidInput(_)),
+            "expected InvalidInput, got {err:?}"
+        );
+    }
+
+    #[test]
+    fn test_overflowing_global_mean_rejected() {
+        // The summed targets overflow to infinity; the global mean would be
+        // non-finite and poison every encoding.
+        let cat = Column::from(Series::new("cat".into(), &["a", "b"]));
+        let x = DataFrame::new(2, vec![cat]).unwrap();
+        let target = Column::from(Series::new("y".into(), &[f64::MAX, f64::MAX]));
+        let y = DataFrame::new(2, vec![target]).unwrap();
+
+        let mut enc = TargetEncoder::new();
+        let err = enc.fit(x, y).unwrap_err();
+        assert!(
+            matches!(err, Error::InvalidInput(_)),
+            "expected InvalidInput, got {err:?}"
         );
     }
 }
