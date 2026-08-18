@@ -36,6 +36,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   encode as an all-zeros vector, nulls are preserved as null across the bit
   columns, and generated-name collisions are rejected rather than silently
   overwriting data (#57).
+- `TargetEncoder` for replacing categorical string values with the smoothed
+  mean of a supervised target: `(n * cat_mean + alpha * global_mean) /
+  (n + alpha)`. The encoder is supervised (`FitSupervised`), takes a
+  single-column `Float64` target at fit time, encodes each fitted String
+  column in place as `Float64` while non-string columns pass through,
+  encodes unseen categories as the global target mean, and preserves nulls.
+  Null and non-finite target rows are excluded from all statistics (#56).
 - `StringCleaner` for trimming and collapsing whitespace, normalizing Unicode
   case, and applying pre-compiled regex replacements to selected String
   columns while preserving nulls and the input schema (#67).
