@@ -38,9 +38,10 @@ use std::collections::HashMap;
 /// # Behaviour
 ///
 /// - [`fit`](FitSupervised::fit) is supervised: it takes the feature data and
-///   a single-column `Float64` target. Only `String` columns are encoded;
-///   non-string columns pass through unchanged. The encoded columns keep their
-///   names and become `Float64`.
+///   a single-column `Float64` target. Every `String` column is encoded in
+///   place as `Float64` (even a column with no usable target rows — its
+///   non-null values become the global mean); non-string columns pass through
+///   unchanged at their original position/dtype.
 /// - Transforming the **exact training frame** (a frame equal to the one
 ///   passed to [`fit`](FitSupervised::fit), value-for-value including nulls)
 ///   returns the per-row leave-one-out encodings. Transforming any **other**
@@ -59,6 +60,8 @@ use std::collections::HashMap;
 ///   category (equivalent to the full-sample mean if no others contribute).
 /// - `alpha` must be finite and non-negative; `fit` returns
 ///   [`Error::InvalidInput`] otherwise.
+/// - All statistics are accumulated as running means (never raw sums), so
+///   very large target values (e.g. `f64::MAX`) do not overflow to infinity.
 ///
 /// # Example
 ///
@@ -189,14 +192,16 @@ impl FitSupervised<DataFrame, DataFrame> for LeaveOneOutEncoder {
             ))
         })?;
 
-        // Global target mean over all usable (non-null, finite) rows.
+        // Global target mean over all usable (non-null, finite) rows,
+        // accumulated incrementally so running sums of very large target
+        // values cannot overflow to infinity.
         let y_vals: Vec<Option<f64>> = y_ca.iter().collect();
-        let mut global_sum = 0.0;
+        let mut global_mean = 0.0;
         let mut global_n = 0u64;
         for opt in &y_vals {
             if let Some(v) = opt.filter(|v| v.is_finite()) {
-                global_sum += v;
                 global_n += 1;
+                global_mean += (v - global_mean) / global_n as f64;
             }
         }
         if global_n == 0 {
@@ -206,10 +211,9 @@ impl FitSupervised<DataFrame, DataFrame> for LeaveOneOutEncoder {
                     .into(),
             ));
         }
-        let global_mean = global_sum / global_n as f64;
         if !global_mean.is_finite() {
             return Err(Error::InvalidInput(
-                "LeaveOneOutEncoder.fit: target values overflow to a non-finite global mean. \
+                "LeaveOneOutEncoder.fit: target values accumulate to a non-finite global mean. \
                  Scale the target values before fitting."
                     .into(),
             ));
@@ -234,6 +238,9 @@ impl FitSupervised<DataFrame, DataFrame> for LeaveOneOutEncoder {
                 ))
             })?;
 
+            // Per-category running mean and count over usable (finite,
+            // non-null) target rows, accumulated incrementally so large
+            // targets cannot overflow a sum.
             let mut stats: HashMap<String, (f64, u64)> = HashMap::new();
             for (opt_cat, opt_y) in ca.iter().zip(y_vals.iter()) {
                 let (Some(cat), Some(v)) = (opt_cat, opt_y) else {
@@ -242,29 +249,30 @@ impl FitSupervised<DataFrame, DataFrame> for LeaveOneOutEncoder {
                 if !v.is_finite() {
                     continue;
                 }
-                let (sum, n) = stats.entry(cat.to_string()).or_insert((0.0, 0u64));
-                *sum += *v;
+                let (mean, n) = stats.entry(cat.to_string()).or_insert((0.0, 0u64));
                 *n += 1;
-            }
-
-            // Skip columns with no observed (non-null, usable-target) category.
-            if stats.is_empty() {
-                continue;
+                *mean += (v - *mean) / *n as f64;
             }
 
             // Full-sample per-category means, used at transform time for data
             // that is not the training frame (new rows cannot be leak-free).
-            // encoded = (sum + alpha * global_mean) / (n + alpha)
+            // A String column with no usable (finite, non-null) target rows
+            // still gets registered with an empty mapping so its output is
+            // consistently `Float64` (non-null values -> global mean).
             let mapping: HashMap<String, f64> = stats
                 .iter()
-                .map(|(c, (sum, n))| {
-                    let encoded = (*sum + self.alpha * global_mean) / (*n as f64 + self.alpha);
+                .map(|(c, (mean, n))| {
+                    // encoded = (n * mean + alpha * global_mean) / (n + alpha),
+                    // expressed as a convex combination so it cannot overflow
+                    // for finite inputs.
+                    let w = *n as f64 / (*n as f64 + self.alpha);
+                    let encoded = w * mean + (1.0 - w) * global_mean;
                     if encoded.is_finite() {
                         Ok((c.clone(), encoded))
                     } else {
                         Err(Error::InvalidInput(format!(
                             "LeaveOneOutEncoder.fit: column '{name}' would encode to a \
-                             non-finite value (sum = {sum}, n = {n}). Target values \
+                             non-finite value for category '{c}' (n = {n}). Target values \
                              or alpha are too large; scale the target or reduce alpha."
                         )))
                     }
@@ -280,14 +288,24 @@ impl FitSupervised<DataFrame, DataFrame> for LeaveOneOutEncoder {
                 .zip(y_vals.iter())
                 .map(|(opt_cat, opt_y)| {
                     let cat = opt_cat?;
-                    let (sum, n) = stats.get(cat).copied().unwrap_or((0.0, 0u64));
-                    let (sum_excl, n_excl) = match opt_y.filter(|v| v.is_finite()) {
-                        Some(v) => (sum - v, n.saturating_sub(1)),
-                        None => (sum, n),
+                    let (mean, n) = stats.get(cat).copied().unwrap_or((global_mean, 0u64));
+                    // Number of usable rows left after excluding this row's own
+                    // target (rows with a null/non-finite target never counted).
+                    let n_excl = match opt_y.filter(|v| v.is_finite()) {
+                        Some(_) => n.saturating_sub(1),
+                        None => n,
                     };
                     if n_excl >= 1 {
-                        let loo =
-                            (sum_excl + self.alpha * global_mean) / (n_excl as f64 + self.alpha);
+                        // Mean of the leave-one-out set, computed without
+                        // forming an overflowing category sum.
+                        let base = match opt_y.filter(|v| v.is_finite()) {
+                            Some(v) => mean + (mean - v) / n_excl as f64,
+                            None => mean,
+                        };
+                        // Smooth toward the global mean via a convex
+                        // combination (see the mapping above).
+                        let w = n_excl as f64 / (n_excl as f64 + self.alpha);
+                        let loo = w * base + (1.0 - w) * global_mean;
                         if loo.is_finite() {
                             Some(loo)
                         } else {
@@ -308,9 +326,8 @@ impl FitSupervised<DataFrame, DataFrame> for LeaveOneOutEncoder {
 
         if names.is_empty() {
             return Err(Error::InvalidInput(
-                "LeaveOneOutEncoder.fit: no string columns with usable categories found. \
-                 LeaveOneOutEncoder operates on String columns with at least one non-null \
-                 value paired with a usable target row."
+                "LeaveOneOutEncoder.fit: no String columns found to encode. \
+                 LeaveOneOutEncoder operates on String columns of the feature data."
                     .into(),
             ));
         }
@@ -831,5 +848,57 @@ mod tests {
             .collect();
         assert_relative_eq!(vals[0], 8.0, epsilon = 1e-12);
         assert_relative_eq!(vals[1], 2.0, epsilon = 1e-12);
+    }
+
+    #[test]
+    fn test_string_column_with_no_usable_targets_is_still_encoded() {
+        // cat_b has no usable target rows at all, but must still become Float64.
+        let cat_a = Column::from(Series::new("cat_a".into(), &["a", "b"]));
+        let cat_b = Column::from(Series::new("cat_b".into(), &["p", "q"]));
+        let x = DataFrame::new(2, vec![cat_a, cat_b]).unwrap();
+        let target = Column::from(Series::new("y".into(), &[Some(5.0f64), None]));
+        let y = DataFrame::new(2, vec![target]).unwrap();
+
+        let mut enc = LeaveOneOutEncoder::new();
+        enc.fit(x.clone(), y).unwrap();
+        let result = enc.transform(x).unwrap();
+
+        assert_eq!(result.column("cat_a").unwrap().dtype(), &DataType::Float64);
+        assert_eq!(result.column("cat_b").unwrap().dtype(), &DataType::Float64);
+        // global = 5. cat_b has no usable stats -> all rows global mean; nulls preserved.
+        let b_vals: Vec<Option<f64>> = result
+            .column("cat_b")
+            .unwrap()
+            .f64()
+            .unwrap()
+            .iter()
+            .collect();
+        assert_relative_eq!(b_vals[0].unwrap(), 5.0, epsilon = 1e-12);
+        assert_relative_eq!(b_vals[1].unwrap(), 5.0, epsilon = 1e-12);
+    }
+
+    #[test]
+    fn test_large_target_values_do_not_overflow() {
+        let cat = Column::from(Series::new("cat".into(), &["a", "a"]));
+        let x = DataFrame::new(2, vec![cat]).unwrap();
+        let target = Column::from(Series::new("y".into(), &[f64::MAX, f64::MAX]));
+        let y = DataFrame::new(2, vec![target]).unwrap();
+
+        let mut enc = LeaveOneOutEncoder::new();
+        enc.fit(x, y).unwrap(); // true mean is f64::MAX (finite); must not return InvalidInput.
+
+        let new_cat = Column::from(Series::new("cat".into(), &["a", "a"]));
+        let new_data = DataFrame::new(2, vec![new_cat]).unwrap();
+        let result = enc.transform(new_data).unwrap();
+        let vals: Vec<f64> = result
+            .column("cat")
+            .unwrap()
+            .f64()
+            .unwrap()
+            .iter()
+            .flatten()
+            .collect();
+        assert!(vals[0].is_finite());
+        assert!(vals[1].is_finite());
     }
 }
