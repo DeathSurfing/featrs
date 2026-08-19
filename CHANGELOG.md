@@ -43,6 +43,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   column in place as `Float64` while non-string columns pass through,
   encodes unseen categories as the global target mean, and preserves nulls.
   Null and non-finite target rows are excluded from all statistics (#56).
+- `LeaveOneOutEncoder` for supervised target encoding with leave-one-out
+  cross-fitting: each training row is encoded with its category's target
+  mean computed from all *other* rows (excluding its own target, which
+  avoids target leakage into the training features). Transforming the exact
+  training frame returns the per-row leave-one-out encodings; transforming
+  new rows returns the full-sample per-category means. Singleton categories
+  fall back to the global target mean, unseen categories encode as the
+  global mean, nulls are preserved, and an optional `alpha` smoothing pulls
+  encodings toward the global mean (#58).
 - `StringCleaner` for trimming and collapsing whitespace, normalizing Unicode
   case, and applying pre-compiled regex replacements to selected String
   columns while preserving nulls and the input schema (#67).

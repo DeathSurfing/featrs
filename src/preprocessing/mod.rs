@@ -9,6 +9,7 @@ pub mod binarizer;
 pub mod constant_column_remover;
 pub mod duplicate_column_remover;
 pub mod encoder;
+pub mod encoder_loo;
 pub mod encoder_target;
 pub mod feature_hasher;
 pub mod imputer;
