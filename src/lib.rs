@@ -69,6 +69,7 @@ pub mod prelude {
     pub use crate::preprocessing::encoder::LabelEncoder;
     pub use crate::preprocessing::encoder::OneHotEncoder;
     pub use crate::preprocessing::encoder::OrdinalEncoder;
+    pub use crate::preprocessing::encoder_loo::LeaveOneOutEncoder;
     pub use crate::preprocessing::encoder_target::TargetEncoder;
     pub use crate::preprocessing::feature_hasher::FeatureHasher;
     pub use crate::preprocessing::imputer::SimpleImputer;
