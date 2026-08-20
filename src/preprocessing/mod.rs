@@ -20,6 +20,7 @@ pub mod missing_indicator;
 pub mod normalizer;
 pub mod outlier_clipper;
 pub mod polynomial_features;
+pub mod power_transformer;
 /// Quantile-based transformation to uniform or normal distribution.
 pub mod quantile_transformer;
 pub mod rare_category_grouper;
