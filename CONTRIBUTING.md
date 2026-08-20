@@ -3,7 +3,7 @@
 ## Getting started
 
 ```bash
-git clone https://github.com/DeathSurfing/featrs.git
+git clone https://github.com/featrs/featrs.git
 cd featrs
 cargo build
 cargo test

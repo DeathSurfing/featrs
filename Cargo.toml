@@ -1,12 +1,12 @@
 [package]
 name = "featrs"
-version = "0.3.6"
+version = "0.3.7"
 edition = "2024"
 rust-version = "1.91"
 description = "Feature engineering library for Rust, inspired by scikit-learn"
 authors = ["Aditya Vikram Mahendru"]
 license = "MIT"
-repository = "https://github.com/DeathSurfing/featrs"
+repository = "https://github.com/featrs/featrs"
 documentation = "https://docs.rs/featrs"
 keywords = ["feature-engineering", "machine-learning", "preprocessing", "scikit-learn"]
 categories = ["science", "data-structures"]

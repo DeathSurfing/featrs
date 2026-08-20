@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.7] - 2026-08-20
+
 ### Added
 
 - `ConstantColumnRemover` for removing columns that contain only a single
@@ -87,6 +89,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `±Inf` is clipped to the bounds, zero-spread and degenerate-overflow
   columns pass through unchanged, and a non-positive multiplier is rejected
   at fit time (#72).
+
+### Fixed
+
+- `ColumnTransformer.transform` now returns a clear `NotFitted` error when
+  called before `fit`, and a failed re-fit resets the fitted state so stale
+  transformer output cannot be used (#42).
 
 ## [0.3.6] - 2026-08-10
 
@@ -284,13 +292,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Pipeline primitives: `Pipeline`, `ColumnTransformer` with `Remainder`.
 - Comprehensive API docs, module docs, and contributing guide.
 
-[Unreleased]: https://github.com/DeathSurfing/featrs/compare/v0.3.6...HEAD
-[0.3.6]: https://github.com/DeathSurfing/featrs/compare/v0.3.5...v0.3.6
-[0.3.5]: https://github.com/DeathSurfing/featrs/compare/v0.3.4...v0.3.5
-[0.3.4]: https://github.com/DeathSurfing/featrs/compare/v0.3.3...v0.3.4
-[0.3.3]: https://github.com/DeathSurfing/featrs/compare/v0.3.2...v0.3.3
-[0.3.2]: https://github.com/DeathSurfing/featrs/compare/v0.3.1...v0.3.2
-[0.3.1]: https://github.com/DeathSurfing/featrs/compare/v0.3.0...v0.3.1
-[0.3.0]: https://github.com/DeathSurfing/featrs/releases/tag/v0.3.0
-[0.2.0]: https://github.com/DeathSurfing/featrs/releases/tag/v0.2.0
-[0.1.0]: https://github.com/DeathSurfing/featrs/releases/tag/v0.1.0
+[Unreleased]: https://github.com/featrs/featrs/compare/v0.3.7...HEAD
+[0.3.7]: https://github.com/featrs/featrs/compare/v0.3.6...v0.3.7
+[0.3.6]: https://github.com/featrs/featrs/compare/v0.3.5...v0.3.6
+[0.3.5]: https://github.com/featrs/featrs/compare/v0.3.4...v0.3.5
+[0.3.4]: https://github.com/featrs/featrs/compare/v0.3.3...v0.3.4
+[0.3.3]: https://github.com/featrs/featrs/compare/v0.3.2...v0.3.3
+[0.3.2]: https://github.com/featrs/featrs/compare/v0.3.1...v0.3.2
+[0.3.1]: https://github.com/featrs/featrs/compare/v0.3.0...v0.3.1
+[0.3.0]: https://github.com/featrs/featrs/releases/tag/v0.3.0
+[0.2.0]: https://github.com/featrs/featrs/releases/tag/v0.2.0
+[0.1.0]: https://github.com/featrs/featrs/releases/tag/v0.1.0
