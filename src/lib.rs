@@ -89,6 +89,8 @@ pub mod prelude {
     pub use crate::preprocessing::outlier_clipper::OutlierClipper;
     pub use crate::preprocessing::polynomial_features::PolynomialFeatures;
     pub use crate::preprocessing::polynomial_features::PolynomialFeaturesBuilder;
+    pub use crate::preprocessing::power_transformer::PowerMethod;
+    pub use crate::preprocessing::power_transformer::PowerTransformer;
     pub use crate::preprocessing::quantile_transformer::OutputDistribution;
     pub use crate::preprocessing::quantile_transformer::QuantileTransformer;
     pub use crate::preprocessing::rare_category_grouper::RareCategoryGrouper;
