@@ -14,6 +14,7 @@ pub mod encoder_target;
 pub mod feature_hasher;
 pub mod imputer;
 pub mod interaction_features;
+pub mod kbins_discretizer;
 pub mod log_transformer;
 pub mod max_abs_scaler;
 pub mod missing_indicator;
