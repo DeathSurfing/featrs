@@ -54,9 +54,11 @@ struct BinEdges {
 /// preserved unchanged in the output. The chosen bin boundaries (`bin_edges`)
 /// are learned during [`fit`](Fit::fit) and applied later by
 /// [`transform`](Transform::transform). Values seen at transform time that
-/// fall outside the fitted range are clipped to the nearest bin; non-finite
-/// values (NaN/Inf) are preserved as null in `Ordinal` mode and as all-zeros
-/// in one-hot mode.
+/// fall outside the fitted range are clipped to the nearest bin. Missing
+/// values are handled per output mode: in `Ordinal` mode, `null` stays `null`
+/// and non-finite inputs (`NaN`/`±Inf`) are emitted as `NaN`; in one-hot
+/// modes (`OneHot` / `OneHotDropFirst`) both `null` and non-finite inputs
+/// produce all-zero bin columns.
 ///
 /// # Example
 ///
@@ -209,10 +211,13 @@ fn kmeans_edges(values: &[f64], k: usize, max_iter: usize) -> Vec<f64> {
     // Seed centers at evenly spaced ranks within the distinct values.
     let mut centers: Vec<f64> = (0..k).map(|i| distinct[(i * (nd - 1)) / (k - 1)]).collect();
 
-    let mut assignment = vec![0usize; values.len()];
-    for _ in 0..max_iter {
+    let mut assignment: Vec<usize> = Vec::new();
+    for iter in 0..max_iter {
         let mut next = vec![0usize; values.len()];
-        let mut changed = false;
+        // The initial `assignment` is empty; the first iteration must always
+        // be treated as a change (otherwise an all-center-0 first pass would
+        // look "converged" and skip the center update entirely).
+        let mut changed = iter == 0;
         for (i, &v) in values.iter().enumerate() {
             let mut best = 0;
             let mut best_d = f64::INFINITY;
@@ -224,7 +229,7 @@ fn kmeans_edges(values: &[f64], k: usize, max_iter: usize) -> Vec<f64> {
                 }
             }
             next[i] = best;
-            if next[i] != assignment[i] {
+            if iter > 0 && next[i] != assignment[i] {
                 changed = true;
             }
         }
@@ -305,7 +310,7 @@ impl Fit<DataFrame> for KBinsDiscretizer {
             // A constant column admits only a single bin. Give it a
             // degenerate `[min, min]` edge list so every value maps to bin 0,
             // uniformly across strategies.
-            let edges = if vals.first() == vals.last() {
+            let raw = if vals.first() == vals.last() {
                 vec![vals[0], vals[0]]
             } else {
                 match self.strategy {
@@ -315,9 +320,26 @@ impl Fit<DataFrame> for KBinsDiscretizer {
                 }
             };
 
-            // `OneHotDropFirst` would drop the only bin of a single-bin (constant)
-            // column, silently removing the feature entirely. Reject that
-            // configuration here instead of returning a frame with fewer columns.
+            // Collapse repeated boundaries (e.g. duplicate quantile
+            // percentiles on skewed data). Kept as adjacent duplicates they
+            // would create unreachable bins that leave gaps in the ordinal
+            // indices and always-zero one-hot columns.
+            let mut edges: Vec<f64> = Vec::with_capacity(raw.len());
+            for &e in &raw {
+                if edges.last().is_none_or(|&l| l != e) {
+                    edges.push(e);
+                }
+            }
+            // Guarantee at least two edges (one interval) so a fully
+            // collapsed column still discretizes into a single bin.
+            if edges.len() < 2 {
+                let first = edges[0];
+                edges.push(first);
+            }
+
+            // `OneHotDropFirst` would drop the only bin of a single-bin column,
+            // silently removing the feature entirely. Reject that configuration
+            // here instead of returning a frame with fewer columns.
             if self.encode == EncodeMode::OneHotDropFirst && edges.len() - 1 < 2 {
                 return Err(Error::InvalidInput(format!(
                     "KBinsDiscretizer.fit: column '{name}' collapses to a single bin; \
@@ -478,6 +500,32 @@ mod tests {
                 Some(1.0),
                 Some(2.0),
                 Some(2.0)
+            ]
+        );
+    }
+
+    #[test]
+    fn test_quantile_skewed_duplicate_edges_collapse() {
+        // Heavily skewed data: many zeros make repeated (duplicate) quantile
+        // boundaries. These must collapse so no bin is unreachable and the
+        // ordinal indices stay contiguous.
+        let df = make_df(&[0.0, 0.0, 0.0, 0.0, 1.0, 2.0]);
+        let mut kb = KBinsDiscretizer::new()
+            .n_bins(3)
+            .strategy(BinStrategy::Quantile)
+            .encode(EncodeMode::Ordinal);
+        kb.fit(df.clone()).unwrap();
+        let out = kb.transform(df).unwrap();
+        // Duplicate edges collapse to 2 effective bins: zeros -> 0, 1/2 -> 1.
+        assert_eq!(
+            col_vals(&out, "x"),
+            vec![
+                Some(0.0),
+                Some(0.0),
+                Some(0.0),
+                Some(0.0),
+                Some(1.0),
+                Some(1.0)
             ]
         );
     }
