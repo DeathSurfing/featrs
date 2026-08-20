@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `KBinsDiscretizer` for binning continuous `Float64` features into discrete
+  bins using one of three strategies — equal-width (`Uniform`), equal-population
+  (`Quantile`), or 1-D k-means (`KMeans`) — and encoding each bin either as an
+  ordinal integer column or as one-hot binary columns (optionally dropping the
+  first bin to avoid multicollinearity). Non-`Float64` columns pass through,
+  out-of-range transform values are clipped to the nearest bin, and columns
+  with fewer distinct values than requested bins naturally collapse to fewer
+  bins. Missing values are mode-specific: `Ordinal` keeps `null` as `null` and
+  emits non-finite inputs as `NaN`, while the one-hot modes encode both as
+  all-zero bin columns. (#50).
+
 ## [0.3.7] - 2026-08-20
 
 ### Added

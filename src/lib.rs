@@ -76,6 +76,9 @@ pub mod prelude {
     pub use crate::preprocessing::imputer::Strategy;
     pub use crate::preprocessing::interaction_features::InteractionFeatures;
     pub use crate::preprocessing::interaction_features::InteractionFeaturesBuilder;
+    pub use crate::preprocessing::kbins_discretizer::BinStrategy;
+    pub use crate::preprocessing::kbins_discretizer::EncodeMode;
+    pub use crate::preprocessing::kbins_discretizer::KBinsDiscretizer;
     pub use crate::preprocessing::log_transformer::LogMethod;
     pub use crate::preprocessing::log_transformer::LogTransformer;
     pub use crate::preprocessing::max_abs_scaler::MaxAbsScaler;
