@@ -95,6 +95,8 @@ impl PowerTransformer {
     /// Set the power transformation method (default: [`PowerMethod::YeoJohnson`]).
     pub fn method(mut self, m: PowerMethod) -> Self {
         self.method = m;
+        self.fitted = false;
+        self.params = None;
         self
     }
 
@@ -102,6 +104,8 @@ impl PowerTransformer {
     /// (default: `true`).
     pub fn standardize(mut self, b: bool) -> Self {
         self.standardize = b;
+        self.fitted = false;
+        self.params = None;
         self
     }
 }
@@ -136,9 +140,8 @@ fn yeo_johnson(x: f64, lambda: f64) -> f64 {
     }
 }
 
-/// Negative log-likelihood... actually the (positive) log-likelihood of
-/// `lambda` under the MLE criterion scikit-learn uses: maximize
-/// `-n/2 * ln(var(y)) + (lambda - 1) * sum(log_terms)`.
+/// Log-likelihood of `lambda` under the MLE criterion scikit-learn uses:
+/// maximize `-n/2 * ln(var(y)) + (lambda - 1) * sum(log_terms)`.
 fn log_likelihood(vals: &[f64], lambda: f64, method: PowerMethod) -> f64 {
     let n = vals.len() as f64;
     let transformed: Vec<f64> = vals
@@ -152,7 +155,7 @@ fn log_likelihood(vals: &[f64], lambda: f64, method: PowerMethod) -> f64 {
     let mean = transformed.iter().sum::<f64>() / n;
     let var = transformed.iter().map(|v| (v - mean).powi(2)).sum::<f64>() / n;
 
-    if var <= 0.0 {
+    if !var.is_finite() || var <= 0.0 {
         return f64::NEG_INFINITY;
     }
 
@@ -161,7 +164,8 @@ fn log_likelihood(vals: &[f64], lambda: f64, method: PowerMethod) -> f64 {
         PowerMethod::YeoJohnson => vals.iter().map(|v| v.signum() * (v.abs() + 1.0).ln()).sum(),
     };
 
-    -0.5 * n * var.ln() + (lambda - 1.0) * log_terms
+    let ll = -0.5 * n * var.ln() + (lambda - 1.0) * log_terms;
+    if ll.is_nan() { f64::NEG_INFINITY } else { ll }
 }
 
 /// Golden-section search for the lambda in `[LAMBDA_MIN, LAMBDA_MAX]` that
@@ -320,6 +324,31 @@ impl Transform<DataFrame> for PowerTransformer {
             let mean = p.mean;
             let std = p.std;
             let method = self.method;
+
+            if method == PowerMethod::BoxCox {
+                let s = out.column(p.name.as_str()).map_err(|e| {
+                    Error::InvalidInput(format!(
+                        "PowerTransformer.transform: column '{}' not found. {e}",
+                        p.name
+                    ))
+                })?;
+                let ca = s.f64().map_err(|e| {
+                    Error::InvalidInput(format!(
+                        "PowerTransformer.transform: column '{}' has dtype {}; expected Float64. {e}",
+                        p.name,
+                        s.dtype()
+                    ))
+                })?;
+                let bad = ca.iter().flatten().filter(|v| *v <= 0.0).count();
+                if bad > 0 {
+                    return Err(Error::InvalidInput(format!(
+                        "PowerTransformer.transform: Box-Cox requires strictly positive values, \
+                         but column '{}' contains {bad} value(s) <= 0.",
+                        p.name
+                    )));
+                }
+            }
+
             replace_f64_column(&mut out, &p.name, "PowerTransformer", move |v| {
                 let y = match method {
                     PowerMethod::BoxCox => box_cox(v, lambda),
@@ -426,6 +455,37 @@ mod tests {
         assert!(
             (0.0..=2.5).contains(&lambda),
             "expected lambda in a sane range for near-linear data, got {lambda}"
+        );
+    }
+
+    #[test]
+    fn test_box_cox_transform_rejects_non_positive() {
+        let df = skewed_positive_df();
+        let mut t = PowerTransformer::new()
+            .method(PowerMethod::BoxCox)
+            .standardize(false);
+        t.fit(df).unwrap();
+
+        let bad = Column::from(Series::new("x".into(), &[1.0f64, -2.0, 3.0]));
+        let bad_df = DataFrame::new(3, vec![bad]).unwrap();
+        let result = t.transform(bad_df);
+        assert!(
+            result.is_err(),
+            "transform must reject non-positive Box-Cox input, not silently emit NaN/-Inf"
+        );
+    }
+
+    #[test]
+    fn test_reconfiguring_after_fit_clears_fitted_state() {
+        let df = skewed_positive_df();
+        let mut t = PowerTransformer::new().method(PowerMethod::YeoJohnson);
+        t.fit(df.clone()).unwrap();
+
+        let t2 = t.method(PowerMethod::BoxCox);
+        let result = t2.transform(df);
+        assert!(
+            result.is_err(),
+            "rebinding method() after fit must invalidate fitted state"
         );
     }
 
