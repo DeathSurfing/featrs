@@ -503,7 +503,10 @@ mod tests {
 
         let ca = out.column("x").unwrap().f64().unwrap();
         let vals: Vec<Option<f64>> = ca.iter().collect();
-        assert!(vals[1].is_none(), "null input must stay null through transform");
+        assert!(
+            vals[1].is_none(),
+            "null input must stay null through transform"
+        );
     }
 
     #[test]
