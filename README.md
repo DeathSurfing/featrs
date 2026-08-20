@@ -37,6 +37,7 @@ let scaled = scaler.transform(data)?;
 | | `MaxAbsScaler` | Scale by maximum absolute value; training values map to `[-1, 1]`, sparsity preserved |
 | | `Winsorizer` | Clip extreme values at configurable quantiles (outlier capping) |
 | | `OutlierClipper` | Clip outliers via IQR, Z-score, or MAD statistical fences |
+| | `KBinsDiscretizer` | Bin continuous features into `n_bins` discrete bins (uniform, quantile, or k-means) as ordinal or one-hot |
 | **Normalization** | `Normalizer` | Row-wise L1, L2, or Max normalization |
 | | `Binarizer` | Threshold-based binarization |
 | **Encoding** | `OneHotEncoder` | Create binary dummy columns for categories |
