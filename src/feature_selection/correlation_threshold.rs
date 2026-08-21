@@ -251,33 +251,30 @@ fn correlation(a: &[Option<f64>], b: &[Option<f64>], method: CorrelationMethod) 
 ///
 /// Both inputs must be the same length and contain only finite values.
 ///
-/// The computation is overflow-safe: each vector is centered on its first
-/// element and then scaled by its maximum deviation before means, covariances,
-/// and variances are accumulated. Pearson correlation is invariant to
-/// translating and positively scaling each variable independently, so this does
-/// not change the result, but it keeps intermediate sums bounded even for
-/// `1e308`-scale inputs (where the naive formula would overflow to `inf`/`NaN`,
-/// and a `NaN` correlation would wrongly retain a perfectly correlated column).
-/// Returns `0.0` when either vector is constant (zero variance).
+/// The computation is overflow-safe: each raw vector is first scaled by its
+/// maximum absolute value (keeping every element in `[-1, 1]`), and its mean
+/// is then computed from the scaled values. Pearson correlation is invariant
+/// to independently and positively scaling each variable, so this does not
+/// change the result, but it keeps all intermediate sums bounded and avoids
+/// centering overflow (e.g. `1e308 - (-1e308)` would be `inf`) even for
+/// `1e308`-scale inputs, where the naive formula would yield `NaN` and wrongly
+/// retain a perfectly correlated column. Returns `0.0` when either vector is
+/// constant (zero variance).
 fn pearson_values(a: &[f64], b: &[f64]) -> f64 {
     let n = a.len();
-    let a0 = a[0];
-    let b0 = b[0];
-    let da: Vec<f64> = a.iter().map(|x| x - a0).collect();
-    let db: Vec<f64> = b.iter().map(|y| y - b0).collect();
-    let ma = da.iter().fold(0.0_f64, |m, &x| m.max(x.abs()));
-    let mb = db.iter().fold(0.0_f64, |m, &x| m.max(x.abs()));
-    if ma == 0.0 || mb == 0.0 {
+    let scale_a = a.iter().fold(0.0_f64, |m, &x| m.max(x.abs()));
+    let scale_b = b.iter().fold(0.0_f64, |m, &x| m.max(x.abs()));
+    if scale_a == 0.0 || scale_b == 0.0 {
         return 0.0;
     }
-    let sa: Vec<f64> = da.iter().map(|x| x / ma).collect();
-    let sb: Vec<f64> = db.iter().map(|y| y / mb).collect();
-    let mean_a = sa.iter().sum::<f64>() / n as f64;
-    let mean_b = sb.iter().sum::<f64>() / n as f64;
+    let mean_a = a.iter().map(|x| x / scale_a).sum::<f64>() / n as f64;
+    let mean_b = b.iter().map(|y| y / scale_b).sum::<f64>() / n as f64;
     let mut cov = 0.0;
     let mut var_a = 0.0;
     let mut var_b = 0.0;
-    for (x, y) in sa.iter().zip(sb.iter()) {
+    for (&x, &y) in a.iter().zip(b.iter()) {
+        let x = x / scale_a;
+        let y = y / scale_b;
         cov += (x - mean_a) * (y - mean_b);
         var_a += (x - mean_a).powi(2);
         var_b += (y - mean_b).powi(2);
@@ -420,6 +417,23 @@ mod tests {
         let df = frame(vec![
             f64_col("a", &[1.0e308, 1.5e308]),
             f64_col("b", &[1.0e308, 1.5e308]),
+        ]);
+        let mut ct = CorrelationThreshold::new(); // threshold 0.9, Pearson
+        ct.fit(df.clone()).unwrap();
+        let out = ct.transform(df).unwrap();
+        assert_eq!(out.width(), 1);
+        assert_eq!(out.get_column_names()[0].as_str(), "a");
+    }
+
+    #[test]
+    fn test_opposite_sign_large_values_no_overflow() {
+        // Centering on a[0] would compute 1e308 - (-1e308) = inf for these
+        // opposite-sign values, but scaling each raw vector by its max absolute
+        // value first keeps everything in [-1, 1]. Identical columns are
+        // perfectly correlated, so the duplicate must still be dropped.
+        let df = frame(vec![
+            f64_col("a", &[-1.0e308, 1.0e308]),
+            f64_col("b", &[-1.0e308, 1.0e308]),
         ]);
         let mut ct = CorrelationThreshold::new(); // threshold 0.9, Pearson
         ct.fit(df.clone()).unwrap();
