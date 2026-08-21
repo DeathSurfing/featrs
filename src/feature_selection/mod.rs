@@ -4,8 +4,10 @@
 //! by removing low-variance columns or selecting the top-k features according
 //! to a statistical test.
 
+pub mod correlation_threshold;
 pub mod select_kbest;
 pub mod variance_threshold;
 
+pub use correlation_threshold::CorrelationThreshold;
 pub use select_kbest::SelectKBest;
 pub use variance_threshold::VarianceThreshold;
