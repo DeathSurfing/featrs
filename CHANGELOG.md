@@ -20,6 +20,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   emits non-finite inputs as `NaN`, while the one-hot modes encode both as
   all-zero bin columns. (#50).
 
+- `CorrelationThreshold` for removing features that are highly correlated with
+  other features, keeping the first (in input order) column from each group of
+  mutually correlated columns above a configurable absolute-correlation
+  threshold. Supports Pearson and Spearman correlation methods. Non-`Float64`
+  columns pass through (are dropped from the output); null/`NaN` values are
+  skipped pairwise; undefined correlations (e.g. constant columns) are treated
+  as zero so such columns are kept (at threshold `0.0` they are dropped like
+  any other). (#51).
+
 ## [0.3.7] - 2026-08-20
 
 ### Added

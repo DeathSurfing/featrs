@@ -62,6 +62,7 @@ let scaled = scaler.transform(data)?;
 | | `ColumnTransformer` | Apply different transformers to different columns |
 | **Selection** | `VarianceThreshold` | Remove low-variance features |
 | | `SelectKBest` | Select top-k features by statistical test (ANOVA F) |
+| | `CorrelationThreshold` | Drop features highly correlated with others |
 | **Auto** | `AutoTypeDetector` | Auto-detect column types and apply default transforms |
 
 ## Examples
