@@ -32,7 +32,9 @@ pub enum CorrelationMethod {
 /// Correlations are computed over rows where both values are present and
 /// finite; null and non-finite (`NaN`/`±Inf`) values are skipped pairwise. When
 /// a correlation is undefined (e.g. a constant column produces a zero standard
-/// deviation), it is treated as `0.0`, so the column is kept.
+/// deviation), it is treated as `0.0`, so the column is retained whenever the
+/// threshold is greater than `0.0`; at a threshold of exactly `0.0` such a
+/// column is dropped like any other (`0.0 >= 0.0`).
 ///
 /// # Example
 ///
@@ -127,9 +129,10 @@ impl Fit<DataFrame> for CorrelationThreshold {
 
         let names = require_f64_columns(&x, "CorrelationThreshold")?;
 
-        // Prepare the work vector for each Float64 column (values for Pearson,
-        // rank-transformed values for Spearman). Null/NaN map to `None` so they
-        // are skipped pairwise during correlation.
+        // Keep the raw finite values for every Float64 column. Correlation is
+        // computed pairwise (method-dispatch inside `correlation`); for
+        // Spearman, ranks are derived from the aligned complete pairs, so they
+        // are not affected by rows missing from one of the two columns.
         let mut work: Vec<(String, Vec<Option<f64>>)> = Vec::new();
         for name in &names {
             let s = x.column(name).map_err(|e| {
@@ -144,11 +147,7 @@ impl Fit<DataFrame> for CorrelationThreshold {
             })?;
             let values: Vec<Option<f64>> =
                 ca.iter().map(|opt| opt.filter(|v| v.is_finite())).collect();
-            let prepared = match self.method {
-                CorrelationMethod::Pearson => values,
-                CorrelationMethod::Spearman => average_ranks(&values),
-            };
-            work.push((name.clone(), prepared));
+            work.push((name.clone(), values));
         }
 
         // Greedily select: keep a column unless it is correlated (|r| >= threshold)
@@ -160,7 +159,7 @@ impl Fit<DataFrame> for CorrelationThreshold {
             let mut drop = false;
             for &j in &survivors {
                 let (_, other) = &work[j];
-                if pearson(values, other).abs() >= self.threshold {
+                if correlation(values, other, self.method).abs() >= self.threshold {
                     drop = true;
                     break;
                 }
@@ -212,29 +211,54 @@ impl Transform<DataFrame> for CorrelationThreshold {
     }
 }
 
-/// Compute the Pearson correlation between two aligned work vectors.
+/// Compute the correlation between two columns following the selected method.
 ///
-/// Rows where either value is `None` are skipped (pairwise complete
+/// Rows where either value is `None` are excluded first (pairwise complete
 /// observations). Returns `0.0` when fewer than two complete pairs exist or
-/// when either column is constant over the complete pairs (zero variance), so
-/// an undefined correlation never falsely drops a feature.
-fn pearson(a: &[Option<f64>], b: &[Option<f64>]) -> f64 {
-    let mut pairs = Vec::new();
-    for (x, y) in a.iter().zip(b.iter()) {
-        if let (Some(x), Some(y)) = (x, y) {
-            pairs.push((*x, *y));
-        }
-    }
-    let n = pairs.len();
-    if n < 2 {
+/// when the correlation is undefined over the complete pairs (zero variance),
+/// so an undefined correlation never falsely drops a feature.
+///
+/// For [`Spearman`](CorrelationMethod::Spearman), ranks are computed from the
+/// aligned complete pairs of *both* columns, so a value missing from one
+/// column does not affect the ranking of the other.
+fn correlation(a: &[Option<f64>], b: &[Option<f64>], method: CorrelationMethod) -> f64 {
+    let pairs: Vec<(f64, f64)> = a
+        .iter()
+        .zip(b.iter())
+        .filter_map(|(x, y)| match (x, y) {
+            (Some(x), Some(y)) => Some((*x, *y)),
+            _ => None,
+        })
+        .collect();
+    if pairs.len() < 2 {
         return 0.0;
     }
-    let mean_a = pairs.iter().map(|p| p.0).sum::<f64>() / n as f64;
-    let mean_b = pairs.iter().map(|p| p.1).sum::<f64>() / n as f64;
+    match method {
+        CorrelationMethod::Pearson => {
+            let xs: Vec<f64> = pairs.iter().map(|p| p.0).collect();
+            let ys: Vec<f64> = pairs.iter().map(|p| p.1).collect();
+            pearson_values(&xs, &ys)
+        }
+        CorrelationMethod::Spearman => {
+            let xs: Vec<f64> = pairs.iter().map(|p| p.0).collect();
+            let ys: Vec<f64> = pairs.iter().map(|p| p.1).collect();
+            pearson_values(&ranks_of(&xs), &ranks_of(&ys))
+        }
+    }
+}
+
+/// Compute the Pearson correlation between two aligned, complete value vectors.
+///
+/// Both inputs must be the same length and contain only finite values. Returns
+/// `0.0` when either vector is constant (zero variance).
+fn pearson_values(a: &[f64], b: &[f64]) -> f64 {
+    let n = a.len();
+    let mean_a = a.iter().sum::<f64>() / n as f64;
+    let mean_b = b.iter().sum::<f64>() / n as f64;
     let mut cov = 0.0;
     let mut var_a = 0.0;
     let mut var_b = 0.0;
-    for (x, y) in &pairs {
+    for (x, y) in a.iter().zip(b.iter()) {
         cov += (x - mean_a) * (y - mean_b);
         var_a += (x - mean_a).powi(2);
         var_b += (y - mean_b).powi(2);
@@ -256,30 +280,25 @@ fn pearson(a: &[Option<f64>], b: &[Option<f64>]) -> f64 {
     }
 }
 
-/// Rank-transform a work vector using average ranks for ties.
+/// Rank-transform a value vector using average ranks for ties.
 ///
-/// `None` (missing) values stay `None`. Ranks are `1`-based; tied values all
-/// receive the average of the ranks they span. This is the standard method
-/// used by Spearman's rank correlation.
-fn average_ranks(values: &[Option<f64>]) -> Vec<Option<f64>> {
+/// Ranks are `1`-based; tied values all receive the average of the ranks they
+/// span. This is the standard tie handling used by Spearman's rank correlation.
+fn ranks_of(values: &[f64]) -> Vec<f64> {
     let n = values.len();
-    let mut out: Vec<Option<f64>> = vec![None; n];
-    let mut present: Vec<(usize, f64)> = values
-        .iter()
-        .enumerate()
-        .filter_map(|(i, v)| v.map(|x| (i, x)))
-        .collect();
+    let mut out: Vec<f64> = vec![0.0; n];
+    let mut present: Vec<(usize, f64)> = values.iter().copied().enumerate().collect();
     present.sort_by(|a, b| a.1.total_cmp(&b.1));
-    let m = present.len();
     let mut i = 0;
-    while i < m {
+    while i < present.len() {
         let mut j = i;
-        while j + 1 < m && present[j + 1].1.total_cmp(&present[i].1) == Ordering::Equal {
+        while j + 1 < present.len() && present[j + 1].1.total_cmp(&present[i].1) == Ordering::Equal
+        {
             j += 1;
         }
         let avg = (i + j) as f64 / 2.0 + 1.0;
         for k in i..=j {
-            out[present[k].0] = Some(avg);
+            out[present[k].0] = avg;
         }
         i = j + 1;
     }
@@ -408,6 +427,43 @@ mod tests {
             .method(CorrelationMethod::Spearman);
         ct.fit(df.clone()).unwrap();
         assert_eq!(ct.transform(df).unwrap().width(), 1);
+    }
+
+    #[test]
+    fn test_spearman_ranks_pairwise_complete_rows() {
+        // `a` is present in all 10 rows; `b` is present only at rows 1,2,3,9,10
+        // (0-indexed 0,1,2,8,9). Over the five complete pairs both columns are
+        // monotonically ordered, so pairwise Spearman = 1.0 and `b` is dropped
+        // at threshold 0.9. Ranking each full column first (the previous buggy
+        // approach) would correlate a's ranks [1,2,3,9,10] with b's [1,2,3,4,5]
+        // (≈0.756) and wrongly keep `b`.
+        let a = Column::from(Series::new(
+            "a".into(),
+            &[1.0_f64, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0],
+        ));
+        let b = Column::from(Series::new(
+            "b".into(),
+            &[
+                Some(1.0_f64),
+                Some(2.0),
+                Some(3.0),
+                None,
+                None,
+                None,
+                None,
+                None,
+                Some(9.0),
+                Some(10.0),
+            ],
+        ));
+        let df = DataFrame::new(10, vec![a, b]).unwrap();
+        let mut ct = CorrelationThreshold::new()
+            .threshold(0.9)
+            .method(CorrelationMethod::Spearman);
+        ct.fit(df.clone()).unwrap();
+        let out = ct.transform(df).unwrap();
+        assert_eq!(out.width(), 1);
+        assert_eq!(out.get_column_names()[0].as_str(), "a");
     }
 
     #[test]
