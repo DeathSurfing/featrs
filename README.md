@@ -58,6 +58,7 @@ let scaled = scaler.transform(data)?;
 | | `Lagger` | Create lag features for time-series forecasting |
 | | `RollingAggregator` | Rolling window mean, std, min, max, sum |
 | | `Difference` | Differencing (`x[t] - x[t-1]`) and percentage change |
+| | `DatetimeFeatures` | Extract year/month/weekday/quarter/… components from date columns |
 | **Pipeline** | `Pipeline` | Sequentially chain multiple transformers |
 | | `ColumnTransformer` | Apply different transformers to different columns |
 | **Selection** | `VarianceThreshold` | Remove low-variance features |

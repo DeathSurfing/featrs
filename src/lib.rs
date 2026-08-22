@@ -63,6 +63,8 @@ pub mod prelude {
     pub use crate::preprocessing::auto_type::{AutoTypeDetector, ColumnType};
     pub use crate::preprocessing::binarizer::Binarizer;
     pub use crate::preprocessing::constant_column_remover::ConstantColumnRemover;
+    pub use crate::preprocessing::datetime_features::DatetimeComponent;
+    pub use crate::preprocessing::datetime_features::DatetimeFeatures;
     pub use crate::preprocessing::duplicate_column_remover::DuplicateColumnRemover;
     pub use crate::preprocessing::encoder::BinaryEncoder;
     pub use crate::preprocessing::encoder::CountEncoder;

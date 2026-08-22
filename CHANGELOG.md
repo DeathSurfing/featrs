@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `DatetimeFeatures` for extracting calendar components (`Year`, `Month`,
+  `Day`, `Hour`, `Minute`, `Second`, `Weekday`, `DayOfYear`, `WeekOfYear`,
+  `Quarter`, `IsWeekend`) from `Date`/`Datetime` columns into new columns
+  named `{col}_{component}` (`Int32`, except the weekend flag which is
+  `Float64`). Columns auto-discover when unspecified; empty component lists
+  default to `Year`/`Month`/`Day`; weekday is 0-based (`0 = Monday`) and the
+  weekend flag marks Saturday/Sunday; nulls propagate; `Date` columns
+  zero-fill time-of-day components; generated-name collisions with input
+  columns are rejected at fit and transform. (#59).
+
 - `KBinsDiscretizer` for binning continuous `Float64` features into discrete
   bins using one of three strategies — equal-width (`Uniform`), equal-population
   (`Quantile`), or 1-D k-means (`KMeans`) — and encoding each bin either as an
