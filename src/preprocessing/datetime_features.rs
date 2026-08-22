@@ -9,6 +9,7 @@
 use crate::traits::{Error, Fit, Result, Transform};
 use polars::prelude::*;
 use std::collections::HashSet;
+use std::ops::Not;
 
 /// A calendar component that can be extracted from a `Date`/`Datetime` column.
 ///
@@ -355,13 +356,19 @@ impl DatetimeFeatures {
 /// Used for time-of-day components (`Hour`, `Minute`, `Second`) on `Date`
 /// columns, which have no time component: every non-null value is `0`, nulls
 /// stay null.
-fn zero_fill_i32(s: &Series) -> Series {
-    let zeros: Int32Chunked = s
-        .rechunk()
-        .iter()
-        .map(|v| (!v.is_null()).then_some(0i32))
-        .collect();
-    zeros.into_series()
+///
+/// The result is built from the validity mask, so the input series' values
+/// are never copied (rechunking it just to read nulls would be an unnecessary
+/// full copy).
+fn zero_fill_i32(s: &Series) -> Result<Series> {
+    let zeros = Int32Chunked::from_iter(std::iter::repeat_n(Some(0i32), s.len())).into_series();
+    let not_null = s.is_null().not();
+    zeros
+        .zip_with(
+            &not_null,
+            &Series::full_null(s.name().clone(), s.len(), &DataType::Int32),
+        )
+        .map_err(|e| Error::Computation(format!("DatetimeFeatures.transform: {e}")))
 }
 
 /// Convert an `Int8` chunked array to an `Int32` series by element-wise
@@ -394,15 +401,15 @@ fn extract_component(s: &Series, comp: DatetimeComponent, col: &str) -> Result<S
         DatetimeComponent::Month => i8_to_i32(&s.month().map_err(c_err)?),
         DatetimeComponent::Day => i8_to_i32(&s.day().map_err(c_err)?),
         DatetimeComponent::Hour => match s.dtype() {
-            DataType::Date => zero_fill_i32(s),
+            DataType::Date => zero_fill_i32(s)?,
             _ => i8_to_i32(&s.hour().map_err(c_err)?),
         },
         DatetimeComponent::Minute => match s.dtype() {
-            DataType::Date => zero_fill_i32(s),
+            DataType::Date => zero_fill_i32(s)?,
             _ => i8_to_i32(&s.minute().map_err(c_err)?),
         },
         DatetimeComponent::Second => match s.dtype() {
-            DataType::Date => zero_fill_i32(s),
+            DataType::Date => zero_fill_i32(s)?,
             _ => i8_to_i32(&s.second().map_err(c_err)?),
         },
         DatetimeComponent::Weekday => {
