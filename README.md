@@ -14,7 +14,7 @@ Built on [Polars](https://pola.rs) — all transformations operate natively on `
 
 ```toml
 [dependencies]
-featrs = "0.3"
+featrs = "0.4"
 ```
 
 ## Quick start
